@@ -1,0 +1,27 @@
+{
+  "name": "form-script",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:server dev:client",
+    "dev:server": "npm --workspace server run dev",
+    "dev:client": "npm --workspace client run dev",
+    "build": "npm --workspace client run build && npm --workspace server run build",
+    "migrate": "npm --workspace server run migrate",
+    "start": "node index.js",
+    "step1": "node step1-collect-ids.js",
+    "step2": "node step2-collect-details.js",
+    "reset": "node index.js --reset",
+    "chrome": "USE_SYSTEM_CHROME=1 node index.js"
+  },
+  "dependencies": {
+    "playwright": "^1.59.1"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5"
+  }
+}

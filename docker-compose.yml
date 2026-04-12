@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: form-script-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: form_script
+      POSTGRES_PASSWORD: form_script
+      POSTGRES_DB: form_script
+    ports:
+      - "5432:5432"
+    volumes:
+      - form_script_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U form_script -d form_script"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  form_script_pgdata:
