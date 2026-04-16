@@ -1,14 +1,30 @@
 import "dotenv/config";
-import { drizzle } from "drizzle-orm/node-postgres";
-import pg from "pg";
-import * as schema from "./schema.js";
+import { MikroORM } from "@mikro-orm/postgresql";
+import type { EntityManager } from "@mikro-orm/postgresql";
+import config from "../mikro-orm.config.js";
 
-const { Pool } = pg;
+let ormInstance: MikroORM | null = null;
 
-const connectionString =
-  process.env.DATABASE_URL ??
-  "postgres://form_script:form_script@localhost:5432/form_script";
+export async function initOrm(): Promise<MikroORM> {
+  if (ormInstance) return ormInstance;
+  ormInstance = await MikroORM.init(config);
+  return ormInstance;
+}
 
-export const pool = new Pool({ connectionString });
-export const db = drizzle(pool, { schema });
-export { schema };
+export function getOrm(): MikroORM {
+  if (!ormInstance) {
+    throw new Error("ORM not initialized. Call initOrm() first.");
+  }
+  return ormInstance;
+}
+
+export function getEm(): EntityManager {
+  return getOrm().em as EntityManager;
+}
+
+export async function closeOrm(): Promise<void> {
+  if (ormInstance) {
+    await ormInstance.close(true);
+    ormInstance = null;
+  }
+}

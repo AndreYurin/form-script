@@ -1,15 +1,26 @@
 import { Router } from "express";
-import { eq, desc } from "drizzle-orm";
-import { db } from "../db/client.js";
-import { projects, scriptRuns } from "../db/schema.js";
+import { Project } from "../db/entities/project.js";
+import { ScriptRun } from "../db/entities/script-run.js";
 import { rescheduleProject } from "../cron/scheduler.js";
 
 export const projectsRouter = Router();
 
-projectsRouter.get("/", async (_req, res, next) => {
+function serializeProject(project: Project) {
+  return {
+    id: project.id,
+    name: project.name,
+    description: project.description ?? null,
+    targetUrl: project.targetUrl,
+    cronExpression: project.cronExpression,
+    cronEnabled: project.cronEnabled,
+    createdAt: project.createdAt,
+  };
+}
+
+projectsRouter.get("/", async (req, res, next) => {
   try {
-    const rows = await db.select().from(projects).orderBy(projects.id);
-    res.json(rows);
+    const rows = await req.em.find(Project, {}, { orderBy: { id: "asc" } });
+    res.json(rows.map(serializeProject));
   } catch (err) {
     next(err);
   }
@@ -18,17 +29,29 @@ projectsRouter.get("/", async (_req, res, next) => {
 projectsRouter.get("/:id", async (req, res, next) => {
   try {
     const id = Number(req.params.id);
-    const [project] = await db.select().from(projects).where(eq(projects.id, id));
+    const project = await req.em.findOne(Project, { id });
     if (!project) return res.status(404).json({ error: "project not found" });
 
-    const [lastRun] = await db
-      .select()
-      .from(scriptRuns)
-      .where(eq(scriptRuns.projectId, id))
-      .orderBy(desc(scriptRuns.startedAt))
-      .limit(1);
+    const lastRun = await req.em.findOne(
+      ScriptRun,
+      { project: id },
+      { orderBy: { startedAt: "desc" } },
+    );
 
-    res.json({ ...project, lastRun: lastRun ?? null });
+    const lastRunJson = lastRun
+      ? {
+          id: lastRun.id,
+          projectId: lastRun.project.id,
+          noticeId: lastRun.notice?.id ?? null,
+          scriptName: lastRun.scriptName,
+          status: lastRun.status,
+          log: lastRun.log,
+          startedAt: lastRun.startedAt,
+          finishedAt: lastRun.finishedAt ?? null,
+        }
+      : null;
+
+    res.json({ ...serializeProject(project), lastRun: lastRunJson });
   } catch (err) {
     next(err);
   }
@@ -42,24 +65,26 @@ projectsRouter.patch("/:id/cron", async (req, res, next) => {
       cronEnabled?: boolean;
     };
 
-    const patch: Partial<{ cronExpression: string; cronEnabled: boolean }> = {};
-    if (typeof cronExpression === "string") patch.cronExpression = cronExpression;
-    if (typeof cronEnabled === "boolean") patch.cronEnabled = cronEnabled;
+    const project = await req.em.findOne(Project, { id });
+    if (!project) return res.status(404).json({ error: "project not found" });
 
-    if (Object.keys(patch).length === 0) {
+    let changed = false;
+    if (typeof cronExpression === "string") {
+      project.cronExpression = cronExpression;
+      changed = true;
+    }
+    if (typeof cronEnabled === "boolean") {
+      project.cronEnabled = cronEnabled;
+      changed = true;
+    }
+
+    if (!changed) {
       return res.status(400).json({ error: "no fields to update" });
     }
 
-    const [updated] = await db
-      .update(projects)
-      .set(patch)
-      .where(eq(projects.id, id))
-      .returning();
-
-    if (!updated) return res.status(404).json({ error: "project not found" });
-
-    await rescheduleProject(updated);
-    res.json(updated);
+    await req.em.flush();
+    await rescheduleProject(project);
+    res.json(serializeProject(project));
   } catch (err) {
     next(err);
   }

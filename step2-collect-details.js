@@ -136,7 +136,17 @@ async function main() {
   const progress = new Set(readJSON(config.FILES.progress, []));
   const results = readJSON(config.FILES.results, []);
 
-  const pending = ids.filter((item) => !progress.has(item.id));
+  const targetId = process.env.NOTICE_ID;
+  let pending;
+  if (targetId) {
+    pending = ids.filter((item) => String(item.id) === String(targetId));
+    if (pending.length === 0) {
+      pending = [{ id: targetId, number: targetId, organizer: '' }];
+    }
+    log.info(`NOTICE_ID=${targetId} — processing single announcement.`);
+  } else {
+    pending = ids.filter((item) => !progress.has(item.id));
+  }
   log.info(`Already processed: ${progress.size}, remaining: ${pending.length}`);
 
   if (pending.length === 0) {

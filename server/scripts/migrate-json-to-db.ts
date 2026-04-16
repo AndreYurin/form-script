@@ -1,12 +1,16 @@
-import { eq } from "drizzle-orm";
-import { db, pool } from "../src/db/client.js";
-import { projects } from "../src/db/schema.js";
+import "reflect-metadata";
+import { initOrm, closeOrm } from "../src/db/client.js";
+import { Project } from "../src/db/entities/project.js";
 import { syncStep1Output, syncStep2Output } from "../src/runner/sync.js";
 
 async function main() {
-  const [project] = await db.select().from(projects).where(eq(projects.name, "goszakup"));
+  const orm = await initOrm();
+  const em = orm.em.fork();
+
+  const project = await em.findOne(Project, { name: "goszakup" });
   if (!project) {
     console.error("[migrate] project 'goszakup' not found — run `npm run db:seed` first");
+    await closeOrm();
     process.exit(1);
   }
 
@@ -18,12 +22,12 @@ async function main() {
   const step2 = await syncStep2Output(project.id);
   console.log(`[migrate] step2: updated=${step2.updated}`);
 
-  await pool.end();
+  await closeOrm();
   console.log("[migrate] done");
 }
 
 main().catch(async (err) => {
   console.error("[migrate] failed", err);
-  await pool.end().catch(() => {});
+  await closeOrm().catch(() => {});
   process.exit(1);
 });

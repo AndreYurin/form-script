@@ -1,13 +1,15 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { db } from "../db/client.js";
-import { scriptRuns, type ScriptRun } from "../db/schema.js";
-import { eq } from "drizzle-orm";
+import { getOrm } from "../db/client.js";
+import { ScriptRun } from "../db/entities/script-run.js";
+import { Project } from "../db/entities/project.js";
+import { Notice } from "../db/entities/notice.js";
+import { ScriptRunStatus } from "../db/enums.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const REPO_ROOT = path.resolve(__dirname, "../../../..");
+const REPO_ROOT = path.resolve(__dirname, "../../..");
 
 export interface RunOptions {
   projectId: number;
@@ -19,16 +21,18 @@ export interface RunOptions {
 }
 
 export async function runScript(opts: RunOptions): Promise<ScriptRun> {
-  const [run] = await db
-    .insert(scriptRuns)
-    .values({
-      projectId: opts.projectId,
-      noticeId: opts.noticeId ?? null,
-      scriptName: opts.scriptName,
-      status: "running",
-      log: "",
-    })
-    .returning();
+  const em = getOrm().em.fork();
+
+  const run = em.create(ScriptRun, {
+    project: em.getReference(Project, opts.projectId),
+    notice: opts.noticeId ? em.getReference(Notice, opts.noticeId) : null,
+    scriptName: opts.scriptName,
+    status: ScriptRunStatus.Running,
+    log: "",
+    startedAt: new Date(),
+  });
+  await em.persistAndFlush(run);
+  const runId = run.id;
 
   const logLines: string[] = [];
 
@@ -53,13 +57,15 @@ export async function runScript(opts: RunOptions): Promise<ScriptRun> {
   return new Promise<ScriptRun>((resolve, reject) => {
     child.on("close", async (code) => {
       const log = logLines.join("");
-      const status = code === 0 ? "success" : "error";
+      const status =
+        code === 0 ? ScriptRunStatus.Success : ScriptRunStatus.Error;
       try {
-        const [updated] = await db
-          .update(scriptRuns)
-          .set({ status, log, finishedAt: new Date() })
-          .where(eq(scriptRuns.id, run.id))
-          .returning();
+        const finishEm = getOrm().em.fork();
+        const updated = await finishEm.findOneOrFail(ScriptRun, { id: runId });
+        updated.status = status;
+        updated.log = log;
+        updated.finishedAt = new Date();
+        await finishEm.flush();
         if (code === 0) resolve(updated);
         else reject(new Error(`script ${opts.scriptName} exited with code ${code}`));
       } catch (err) {

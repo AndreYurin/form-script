@@ -3,22 +3,29 @@ import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { eq } from "drizzle-orm";
-import { db } from "../db/client.js";
-import { projects } from "../db/schema.js";
+import { Project } from "../db/entities/project.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const REPO_ROOT = path.resolve(__dirname, "../../../..");
+const REPO_ROOT = path.resolve(__dirname, "../../..");
 
 export const authRouter = Router();
 
 const activeAuthProcesses = new Map<number, ChildProcess>();
 
+export function killAllAuthProcesses(): void {
+  for (const child of activeAuthProcesses.values()) {
+    try {
+      child.kill("SIGTERM");
+    } catch {}
+  }
+  activeAuthProcesses.clear();
+}
+
 authRouter.post("/:id/authorize", async (req, res, next) => {
   try {
     const projectId = Number(req.params.id);
-    const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+    const project = await req.em.findOne(Project, { id: projectId });
     if (!project) return res.status(404).json({ error: "project not found" });
 
     if (activeAuthProcesses.has(projectId)) {

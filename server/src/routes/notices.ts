@@ -1,10 +1,23 @@
 import { Router } from "express";
-import { and, eq, desc, sql } from "drizzle-orm";
-import { db } from "../db/client.js";
-import { notices } from "../db/schema.js";
+import { Notice } from "../db/entities/notice.js";
+import { NoticeStatus } from "../db/enums.js";
 import { runStep2ForNotice, runStep2Bulk } from "../runner/runs.js";
 
 export const noticesRouter = Router();
+
+function serializeNotice(notice: Notice) {
+  return {
+    id: notice.id,
+    projectId: notice.project.id,
+    noticeId: notice.noticeId,
+    organizer: notice.organizer ?? null,
+    title: notice.title ?? null,
+    status: notice.status,
+    details: notice.details ?? null,
+    collectedAt: notice.collectedAt ?? null,
+    updatedAt: notice.updatedAt,
+  };
+}
 
 noticesRouter.get("/:id/notices", async (req, res, next) => {
   try {
@@ -14,24 +27,16 @@ noticesRouter.get("/:id/notices", async (req, res, next) => {
     const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize ?? 50)));
     const offset = (page - 1) * pageSize;
 
-    const whereClause = status
-      ? and(eq(notices.projectId, projectId), eq(notices.status, status as any))
-      : eq(notices.projectId, projectId);
+    const where: Record<string, unknown> = { project: projectId };
+    if (status) where.status = status as NoticeStatus;
 
-    const rows = await db
-      .select()
-      .from(notices)
-      .where(whereClause)
-      .orderBy(desc(notices.updatedAt))
-      .limit(pageSize)
-      .offset(offset);
+    const [rows, total] = await req.em.findAndCount(Notice, where, {
+      orderBy: { updatedAt: "desc" },
+      limit: pageSize,
+      offset,
+    });
 
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(notices)
-      .where(whereClause);
-
-    res.json({ rows, page, pageSize, total: count });
+    res.json({ rows: rows.map(serializeNotice), page, pageSize, total });
   } catch (err) {
     next(err);
   }
@@ -42,14 +47,17 @@ noticesRouter.patch("/:id/notices/:noticeId/reject", async (req, res, next) => {
     const projectId = Number(req.params.id);
     const noticeRowId = Number(req.params.noticeId);
 
-    const [updated] = await db
-      .update(notices)
-      .set({ status: "rejected", updatedAt: new Date() })
-      .where(and(eq(notices.id, noticeRowId), eq(notices.projectId, projectId)))
-      .returning();
+    const notice = await req.em.findOne(Notice, {
+      id: noticeRowId,
+      project: projectId,
+    });
+    if (!notice) return res.status(404).json({ error: "notice not found" });
 
-    if (!updated) return res.status(404).json({ error: "notice not found" });
-    res.json(updated);
+    notice.status = NoticeStatus.Rejected;
+    notice.updatedAt = new Date();
+    await req.em.flush();
+
+    res.json(serializeNotice(notice));
   } catch (err) {
     next(err);
   }
@@ -60,17 +68,23 @@ noticesRouter.post("/:id/notices/:noticeId/collect", async (req, res, next) => {
     const projectId = Number(req.params.id);
     const noticeRowId = Number(req.params.noticeId);
 
-    const [notice] = await db
-      .select()
-      .from(notices)
-      .where(and(eq(notices.id, noticeRowId), eq(notices.projectId, projectId)));
+    const notice = await req.em.findOne(Notice, {
+      id: noticeRowId,
+      project: projectId,
+    });
 
     if (!notice) return res.status(404).json({ error: "notice not found" });
-    if (notice.status === "rejected" || notice.status === "details_collected") {
+    if (
+      notice.status === NoticeStatus.Rejected ||
+      notice.status === NoticeStatus.DetailsCollected
+    ) {
       return res.status(409).json({ error: `notice is ${notice.status}, skipping` });
     }
 
-    const run = await runStep2ForNotice(projectId, notice);
+    const run = await runStep2ForNotice(projectId, {
+      id: notice.id,
+      noticeId: notice.noticeId,
+    });
     res.json({ runId: run.id });
   } catch (err) {
     next(err);

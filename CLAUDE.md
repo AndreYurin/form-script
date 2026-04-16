@@ -18,8 +18,7 @@ npm install
 cp .env.example .env
 
 # 3. Apply migrations and seed project
-npm run --workspace server db:generate   # first time only
-npm run --workspace server migrate
+npm run --workspace server migrate        # MikroORM migration:up
 npm run --workspace server db:seed
 
 # 4. (optional) Import existing data/*.json into Postgres
@@ -53,14 +52,15 @@ form-script/
 ├── index.js / config.js / lib/ — legacy scraper entrypoint + helpers
 ├── data/                     — JSON outputs + Playwright browser profile
 │
-├── server/                   — Express + Drizzle + node-cron (TypeScript)
-│   ├── drizzle.config.ts
-│   ├── drizzle/              — generated SQL migrations
+├── server/                   — Express + MikroORM + node-cron (TypeScript)
 │   ├── src/
-│   │   ├── index.ts          — Express bootstrap + cron init + static SPA in prod
+│   │   ├── index.ts          — Express bootstrap + RequestContext middleware + cron init + static SPA in prod
+│   │   ├── mikro-orm.config.ts — shared runtime + CLI config
+│   │   ├── migrations/       — MikroORM TS migrations (baseline + subsequent)
 │   │   ├── db/
-│   │   │   ├── schema.ts     — projects, notices, script_runs tables + enums
-│   │   │   ├── client.ts     — pg Pool + drizzle instance
+│   │   │   ├── enums.ts      — NoticeStatus, ScriptRunStatus
+│   │   │   ├── entities/     — Project, Notice, ScriptRun (decorator entities)
+│   │   │   ├── client.ts     — MikroORM.init() bootstrap (initOrm/getOrm/getEm)
 │   │   │   └── seed.ts       — seeds project 1 "goszakup"
 │   │   ├── routes/
 │   │   │   ├── projects.ts   — list, detail, PATCH cron
@@ -129,7 +129,7 @@ See [SITE_DOCS.md](./SITE_DOCS.md) for goszakup.gov.kz structure notes.
 ## For AI Agent / Developer
 
 - **Single source of truth for tuneable scraper params**: `config.js` (legacy) — still drives the child-process scrapers.
-- **Server is TypeScript with ESM + drizzle-orm**. Run via `tsx watch` in dev, `tsc` build for prod.
+- **Server is TypeScript with ESM + MikroORM (PostgreSQL driver)**. Decorator entities live under `server/src/db/entities/`. Each HTTP request is wrapped in `RequestContext.create(orm.em, ...)` so route handlers read `req.em` — a forked EntityManager with its own identity map. Runner modules and cron ticks call `getOrm().em.fork()` explicitly. Run via `tsx watch` in dev, `tsc` build for prod.
 - **Client proxies `/api/*` to `localhost:3001`** in dev; in production (`NODE_ENV=production`) the server serves `client/dist`.
 - **Cron jobs live in the Express process**. Restart the server to re-register them; edits via UI are applied live.
 - **Headed auth**: `POST /api/projects/:id/authorize` opens a real browser on the same machine as the server. Close the window to finish.
@@ -144,7 +144,6 @@ To run the first time:
 - docker compose up -d
 - npm install
 - cp .env.example .env
-- npm run --workspace server db:generate
 - npm run --workspace server migrate
 - npm run --workspace server db:seed
 - npm run --workspace server db:migrate-json # optional: import existing data/\*.json

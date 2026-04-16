@@ -1,24 +1,34 @@
 import { Router } from "express";
-import { and, eq, desc } from "drizzle-orm";
-import { db } from "../db/client.js";
-import { scriptRuns } from "../db/schema.js";
+import { ScriptRun } from "../db/entities/script-run.js";
 import { runStep1 } from "../runner/runs.js";
 
 export const runsRouter = Router();
+
+function serializeScriptRun(run: ScriptRun) {
+  return {
+    id: run.id,
+    projectId: run.project.id,
+    noticeId: run.notice?.id ?? null,
+    scriptName: run.scriptName,
+    status: run.status,
+    log: run.log,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt ?? null,
+  };
+}
 
 runsRouter.get("/:id/script-runs", async (req, res, next) => {
   try {
     const projectId = Number(req.params.id);
     const limit = Math.min(200, Math.max(1, Number(req.query.limit ?? 20)));
 
-    const rows = await db
-      .select()
-      .from(scriptRuns)
-      .where(eq(scriptRuns.projectId, projectId))
-      .orderBy(desc(scriptRuns.startedAt))
-      .limit(limit);
+    const rows = await req.em.find(
+      ScriptRun,
+      { project: projectId },
+      { orderBy: { startedAt: "desc" }, limit },
+    );
 
-    res.json(rows);
+    res.json(rows.map(serializeScriptRun));
   } catch (err) {
     next(err);
   }
@@ -29,13 +39,13 @@ runsRouter.get("/:id/script-runs/:runId", async (req, res, next) => {
     const projectId = Number(req.params.id);
     const runId = Number(req.params.runId);
 
-    const [row] = await db
-      .select()
-      .from(scriptRuns)
-      .where(and(eq(scriptRuns.id, runId), eq(scriptRuns.projectId, projectId)));
+    const row = await req.em.findOne(ScriptRun, {
+      id: runId,
+      project: projectId,
+    });
 
     if (!row) return res.status(404).json({ error: "run not found" });
-    res.json(row);
+    res.json(serializeScriptRun(row));
   } catch (err) {
     next(err);
   }
