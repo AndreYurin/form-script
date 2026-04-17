@@ -1,18 +1,26 @@
 /**
  * Step 1 — Collect announcement IDs from the search page.
  *
- * Opens the filtered search results on goszakup.gov.kz, iterates through
- * every page of results, and for each row checks whether the "Организатор"
- * field contains any of the target keywords (школ, образовательн, ясл,
- * гимнази, лице).  Matching announcement numbers are saved to
- * data/matched_ids.json.
+ * Required arg:
+ *   --keyword <text>          Search term to fill into "Наименование объявления" field.
+ *
+ * Optional arg:
+ *   --screenshot-path <path>  When provided, takes a screenshot after search results load,
+ *                             saves it to the given path, then exits WITHOUT collecting IDs.
  *
  * Site structure (search results page):
- *   - Table with class "table" or DataTables wrapper
+ *   - Table with id="search-result" and DataTables wrapper
  *   - Each row: <tr> inside <tbody>
- *   - Columns: №, Наименование (with Организатор below), Способ, Даты, Сумма, Статус
- *   - Pagination: links inside .pagination or DataTables controls
+ *   - Columns: №, Наименование / Организатор, Способ, Даты, Сумма, Статус
+ *   - td[1] contains the title text directly, followed by <small><b>Организатор:</b> Name</small>
+ *   - Pagination: links inside .pagination
  *   - "Показано c X по Y из Z записей" — total record indicator
+ *
+ * Search form selectors:
+ *   - "Наименование объявления" input: input[name="filter[name]"]
+ *   - "Статус" checkboxes (210, 220, 240): input[name="filter[status][]"][value="210|220|240"]
+ *   - Submit button: button[type="submit"] or button.smb inside the filter form
+ *   - Results table: #search-result tbody tr
  */
 
 const config = require('./config');
@@ -24,21 +32,66 @@ async function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Parse CLI arguments
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const result = { keyword: null, screenshotPath: null };
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--keyword' && args[i + 1]) {
+      result.keyword = args[i + 1];
+      i++;
+    } else if (args[i] === '--screenshot-path' && args[i + 1]) {
+      result.screenshotPath = args[i + 1];
+      i++;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Navigate to the base search page, fill in keyword, select status checkboxes,
+ * click "Найти", and wait for results table.
+ */
+async function performSearch(page, keyword) {
+  const BASE_SEARCH_URL = 'https://goszakup.gov.kz/ru/search/announce';
+
+  log.info(`Navigating to base search page...`);
+  await page.goto(BASE_SEARCH_URL, {
+    waitUntil: 'domcontentloaded',
+    timeout: config.PAGE_LOAD_TIMEOUT,
+  });
+
+  await sleep(2000); // let page fully initialize
+
+  log.info(`Filling keyword: "${keyword}"`);
+  const nameInput = page.locator('input[name="filter[name]"]');
+  await nameInput.waitFor({ timeout: config.PAGE_LOAD_TIMEOUT });
+  await nameInput.fill(keyword);
+
+  // Select statuses in the multi-select: 210 Опубликовано, 220 прием заявок, 240 прием ценовых предложений
+  await page.selectOption('select[name="filter[status][]"]', ['210', '220', '240']);
+  log.info('Selected statuses: 210, 220, 240');
+
+  log.info('Clicking search button...');
+  const submitBtn = page.locator('button[type="submit"]:has-text("Найти")');
+  await submitBtn.click();
+
+  // Wait for results table
+  await page.waitForSelector('#search-result tbody tr', {
+    timeout: config.PAGE_LOAD_TIMEOUT,
+  });
+
+  await sleep(config.NAV_DELAY);
+  log.info('Search results loaded.');
+}
+
 /**
  * Parse a single page of search results.
- * Returns an array of { id, number, organizer } for rows matching keywords.
+ * Returns an array of { id, number, organizer, title } for all rows.
  */
 async function parseSearchPage(page) {
-  // The search results table has id="search-result" and uses DataTables.
-  // Structure per row:
-  //   td[0]: <strong>16776705-1</strong> (number) + lot count
-  //   td[1]: <a href="/ru/announce/index/...">Title</a>
-  //          <small><b>Организатор:</b> Name</small>
-  //   td[2]: Procurement method
-  //   td[3]: Start date
-  //   td[4]: End date
-  //   td[5]: <strong>Amount</strong>
-  //   td[6]: Status
   const tableSelector = '#search-result tbody tr';
   try {
     await page.waitForSelector(tableSelector, { timeout: config.PAGE_LOAD_TIMEOUT });
@@ -47,7 +100,7 @@ async function parseSearchPage(page) {
       'Cannot find results table on the page. The site structure may have changed.\n' +
       'Expected selector: ' + tableSelector
     );
-    return null; // signal to stop
+    return null;
   }
 
   const rows = await page.$$(tableSelector);
@@ -59,37 +112,35 @@ async function parseSearchPage(page) {
   const matches = [];
 
   for (const row of rows) {
-    // Extract organizer from the <small> inside the second <td>
-    const orgEl = await row.$('td:nth-child(2) small');
-    const orgText = orgEl ? await orgEl.innerText().catch(() => '') : '';
-    const organizer = orgText.replace(/^Организатор:\s*/i, '').trim();
-
-    if (!organizer) continue;
-
-    // Check keywords against organizer
-    const lowerOrg = organizer.toLowerCase();
-    const hit = config.KEYWORDS.some((kw) => lowerOrg.includes(kw.toLowerCase()));
-
-    if (!hit) continue;
-
     // Extract announcement number from first <td> > <strong>
     const numEl = await row.$('td:first-child strong');
     const numText = numEl ? (await numEl.innerText()).trim() : '';
     const numberMatch = numText.match(/(\d[\d-]+)/);
-    if (!numberMatch) {
-      log.warn(`Matched organizer "${organizer}" but could not extract number from: "${numText}"`);
-      continue;
-    }
+    if (!numberMatch) continue;
 
     const fullNumber = numberMatch[1]; // e.g. "16776705-1"
+    const id = fullNumber.split('-')[0]; // e.g. "16776705"
 
-    matches.push({
-      number: fullNumber,
-      id: fullNumber.split('-')[0], // e.g. "16776705"
-      organizer,
-    });
+    // Extract organizer from <small> inside second <td>
+    // Structure: <td> Title text <small><b>Организатор:</b> OrgName</small></td>
+    const secondTd = await row.$('td:nth-child(2)');
+    if (!secondTd) continue;
 
-    log.ok(`Match: ${fullNumber} — ${organizer.substring(0, 80)}`);
+    const orgEl = await secondTd.$('small');
+    const orgText = orgEl ? await orgEl.innerText().catch(() => '') : '';
+    const organizer = orgText.replace(/^Организатор:\s*/i, '').trim();
+
+    // Extract title: full text of second td, then strip the organizer small tag text
+    const fullTdText = await secondTd.innerText().catch(() => '');
+    const title = fullTdText
+      .replace(orgText, '')
+      .replace(/Организатор:\s*/i, '')
+      .trim()
+      .split('\n')[0]
+      .trim();
+
+    matches.push({ number: fullNumber, id, organizer, title });
+    log.ok(`Found: ${fullNumber} — ${(organizer || title || '').substring(0, 80)}`);
   }
 
   return matches;
@@ -111,19 +162,12 @@ async function getTotalInfo(page) {
 
 /**
  * Navigate to the next page. Returns true if navigation happened, false if last page.
- *
- * Server-side pagination uses <ul class="pagination"> with:
- *   - «  (previous) — href="javascript:void(0)" when disabled, real URL otherwise
- *   - page numbers — <li class="active"> for current page
- *   - »  (next) — href="javascript:void(0)" when on last page, real URL otherwise
  */
 async function goNextPage(page) {
-  // The » link is inside the last <li> of .pagination
   const nextLink = page.locator('.pagination li:last-child a');
   if ((await nextLink.count()) === 0) return false;
 
   const href = await nextLink.getAttribute('href').catch(() => '');
-  // If href is void or empty, we're on the last page
   if (!href || href.includes('javascript:void')) return false;
 
   await nextLink.click();
@@ -133,34 +177,43 @@ async function goNextPage(page) {
 }
 
 async function main() {
-  log.info('=== Step 1: Collecting announcement IDs ===');
+  const { keyword, screenshotPath } = parseArgs();
 
-  // Load any previously collected IDs (to append, not overwrite)
-  const existing = readJSON(config.FILES.ids, []);
-  const existingIdSet = new Set(existing.map((e) => e.id));
-  log.info(`Previously collected IDs: ${existing.length}`);
+  if (!keyword) {
+    log.error('Missing required argument: --keyword <text>');
+    process.exit(1);
+  }
+
+  log.info(`=== Step 1: Collecting announcement IDs (keyword: "${keyword}") ===`);
 
   const context = await launchBrowser();
   const page = await context.newPage();
 
-  log.info('Opening search page...');
   try {
-    await page.goto(config.SEARCH_URL, {
-      waitUntil: 'domcontentloaded',
-      timeout: config.PAGE_LOAD_TIMEOUT,
-    });
+    await performSearch(page, keyword);
   } catch (err) {
-    log.error(`Failed to load search page: ${err.message}`);
-    log.error('Check your internet connection or the site may be down.');
+    log.error(`Failed during search: ${err.message}`);
     await context.close();
     process.exit(1);
   }
 
-  await sleep(3000); // let DataTables fully initialize
+  // Screenshot-only mode: take screenshot and exit
+  if (screenshotPath) {
+    log.info(`Taking screenshot → ${screenshotPath}`);
+    await page.screenshot({ path: screenshotPath, fullPage: false });
+    log.info('Screenshot saved. Exiting (screenshot-only mode).');
+    await context.close();
+    process.exit(0);
+  }
+
+  // Full collection mode
+  const existing = readJSON(config.FILES.ids, []);
+  const existingIdSet = new Set(existing.map((e) => e.id));
+  log.info(`Previously collected IDs: ${existing.length}`);
 
   const total = await getTotalInfo(page);
   if (total !== null) {
-    log.info(`Total records found: ${total}`);
+    log.info(`Total records on search page: ${total}`);
   }
 
   let allMatches = [...existing];
@@ -171,7 +224,6 @@ async function main() {
     const matches = await parseSearchPage(page);
 
     if (matches === null) {
-      // Critical error — table not found
       log.error('Stopping due to missing table structure.');
       break;
     }
@@ -183,7 +235,6 @@ async function main() {
       }
     }
 
-    // Save after each page (crash recovery)
     writeJSON(config.FILES.ids, allMatches);
 
     const hasNext = await goNextPage(page);

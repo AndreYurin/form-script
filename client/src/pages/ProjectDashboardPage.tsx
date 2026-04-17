@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { queries } from "@/lib/api";
 import { CronConfig } from "@/components/CronConfig";
 import { AuthSection } from "@/components/AuthSection";
+import { SearchKeywordsConfig } from "@/components/SearchKeywordsConfig";
 import { ScriptDocs } from "@/components/ScriptDocs";
 import { NoticeTable } from "@/components/NoticeTable";
 
@@ -32,8 +33,10 @@ export function ProjectDashboardPage() {
         <AuthSection projectId={project.id} />
       </div>
 
+      <SearchKeywordsConfig project={project} />
+
       <ScriptDocs projectId={project.id} />
-      <NoticeTable projectId={project.id} />
+      <NoticeTable projectId={project.id} hasKeywords={(project.searchKeywords?.length ?? 0) > 0} />
     </div>
   );
 }

@@ -33,6 +33,10 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, ts: new Date().toISOString() });
 });
 
+// Serve screenshot files
+const SCREENSHOTS_DIR = path.resolve(__dirname, "../..", "data", "screenshots");
+app.use("/data/screenshots", express.static(SCREENSHOTS_DIR));
+
 app.use("/api/projects", projectsRouter);
 app.use("/api/projects", noticesRouter);
 app.use("/api/projects", runsRouter);

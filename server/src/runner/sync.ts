@@ -17,6 +17,7 @@ interface MatchedEntry {
   id: string;
   organizer?: string;
   title?: string;
+  searchKeyword?: string;
 }
 
 interface ResultEntry {
@@ -37,6 +38,7 @@ async function readJsonSafe<T>(filePath: string, fallback: T): Promise<T> {
 
 export async function syncStep1Output(
   projectId: number,
+  searchKeyword?: string,
 ): Promise<{ inserted: number; skipped: number }> {
   const entries = await readJsonSafe<MatchedEntry[]>(MATCHED_IDS_PATH, []);
   if (entries.length === 0) return { inserted: 0, skipped: 0 };
@@ -58,6 +60,9 @@ export async function syncStep1Output(
   for (const entry of entries) {
     const found = existingMap.get(entry.id);
     if (found) {
+      if (searchKeyword && !found.searchKeyword) {
+        found.searchKeyword = searchKeyword;
+      }
       skipped++;
       continue;
     }
@@ -66,6 +71,7 @@ export async function syncStep1Output(
       noticeId: entry.id,
       organizer: entry.organizer ?? null,
       title: entry.title ?? null,
+      searchKeyword: searchKeyword ?? null,
       status: NoticeStatus.New,
       updatedAt: new Date(),
     });

@@ -12,6 +12,7 @@ function serializeScriptRun(run: ScriptRun) {
     scriptName: run.scriptName,
     status: run.status,
     log: run.log,
+    screenshotPath: run.screenshotPath ?? null,
     startedAt: run.startedAt,
     finishedAt: run.finishedAt ?? null,
   };
@@ -20,15 +21,16 @@ function serializeScriptRun(run: ScriptRun) {
 runsRouter.get("/:id/script-runs", async (req, res, next) => {
   try {
     const projectId = Number(req.params.id);
-    const limit = Math.min(200, Math.max(1, Number(req.query.limit ?? 20)));
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit ?? 50)));
+    const offset = Math.max(0, Number(req.query.offset ?? 0));
 
-    const rows = await req.em.find(
+    const [rows, total] = await req.em.findAndCount(
       ScriptRun,
       { project: projectId },
-      { orderBy: { startedAt: "desc" }, limit },
+      { orderBy: { startedAt: "desc" }, limit, offset },
     );
 
-    res.json(rows.map(serializeScriptRun));
+    res.json({ runs: rows.map(serializeScriptRun), total });
   } catch (err) {
     next(err);
   }

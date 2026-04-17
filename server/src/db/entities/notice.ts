@@ -31,6 +31,9 @@ export class Notice {
   @Property({ type: "text", nullable: true })
   title?: string | null;
 
+  @Property({ type: "text", fieldName: "search_keyword", nullable: true })
+  searchKeyword?: string | null;
+
   @Enum({ items: () => NoticeStatus, default: NoticeStatus.New })
   @Index({ name: "notices_status_idx" })
   status: NoticeStatus = NoticeStatus.New;

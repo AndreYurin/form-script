@@ -12,6 +12,7 @@ function serializeNotice(notice: Notice) {
     noticeId: notice.noticeId,
     organizer: notice.organizer ?? null,
     title: notice.title ?? null,
+    searchKeyword: notice.searchKeyword ?? null,
     status: notice.status,
     details: notice.details ?? null,
     collectedAt: notice.collectedAt ?? null,

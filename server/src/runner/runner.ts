@@ -18,23 +18,34 @@ export interface RunOptions {
   args?: string[];
   env?: Record<string, string>;
   noticeId?: number | null;
+  /** When set, appends log output to an existing ScriptRun row instead of creating a new one. */
+  existingRunId?: number;
+  /** Prefix appended to each log line when writing to an existing run row. */
+  logPrefix?: string;
 }
 
 export async function runScript(opts: RunOptions): Promise<ScriptRun> {
   const em = getOrm().em.fork();
 
-  const run = em.create(ScriptRun, {
-    project: em.getReference(Project, opts.projectId),
-    notice: opts.noticeId ? em.getReference(Notice, opts.noticeId) : null,
-    scriptName: opts.scriptName,
-    status: ScriptRunStatus.Running,
-    log: "",
-    startedAt: new Date(),
-  });
-  await em.persistAndFlush(run);
-  const runId = run.id;
+  let runId: number;
+
+  if (opts.existingRunId !== undefined) {
+    runId = opts.existingRunId;
+  } else {
+    const run = em.create(ScriptRun, {
+      project: em.getReference(Project, opts.projectId),
+      notice: opts.noticeId ? em.getReference(Notice, opts.noticeId) : null,
+      scriptName: opts.scriptName,
+      status: ScriptRunStatus.Running,
+      log: "",
+      startedAt: new Date(),
+    });
+    await em.persistAndFlush(run);
+    runId = run.id;
+  }
 
   const logLines: string[] = [];
+  const prefix = opts.logPrefix ?? "";
 
   const child = spawn("node", [opts.scriptFile, ...(opts.args ?? [])], {
     cwd: REPO_ROOT,
@@ -43,31 +54,45 @@ export async function runScript(opts: RunOptions): Promise<ScriptRun> {
   });
 
   child.stdout.on("data", (chunk) => {
-    const text = chunk.toString();
+    const text = prefix + chunk.toString();
     logLines.push(text);
     process.stdout.write(`[${opts.scriptName}] ${text}`);
   });
 
   child.stderr.on("data", (chunk) => {
-    const text = chunk.toString();
-    logLines.push(`[stderr] ${text}`);
+    const text = `${prefix}[stderr] ${chunk.toString()}`;
+    logLines.push(text);
     process.stderr.write(`[${opts.scriptName}:err] ${text}`);
   });
 
   return new Promise<ScriptRun>((resolve, reject) => {
     child.on("close", async (code) => {
-      const log = logLines.join("");
+      const newLog = logLines.join("");
       const status =
         code === 0 ? ScriptRunStatus.Success : ScriptRunStatus.Error;
       try {
         const finishEm = getOrm().em.fork();
         const updated = await finishEm.findOneOrFail(ScriptRun, { id: runId });
-        updated.status = status;
-        updated.log = log;
-        updated.finishedAt = new Date();
+
+        if (opts.existingRunId !== undefined) {
+          // Append to existing log; don't update status/finishedAt (caller manages those)
+          updated.log = (updated.log || "") + newLog;
+        } else {
+          updated.status = status;
+          updated.log = newLog;
+          updated.finishedAt = new Date();
+        }
+
         await finishEm.flush();
-        if (code === 0) resolve(updated);
-        else reject(new Error(`script ${opts.scriptName} exited with code ${code}`));
+
+        if (opts.existingRunId !== undefined) {
+          // For sub-invocations, reject on non-zero exit so caller can handle
+          if (code === 0) resolve(updated);
+          else reject(new Error(`script ${opts.scriptName} exited with code ${code}`));
+        } else {
+          if (code === 0) resolve(updated);
+          else reject(new Error(`script ${opts.scriptName} exited with code ${code}`));
+        }
       } catch (err) {
         reject(err);
       }

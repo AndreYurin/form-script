@@ -154,6 +154,22 @@
           "comment": null,
           "enumItems": [],
           "mappedType": "datetime"
+        },
+        "search_keyword": {
+          "name": "search_keyword",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
         }
       },
       "name": "notices",
@@ -323,6 +339,22 @@
           "comment": null,
           "enumItems": [],
           "mappedType": "datetime"
+        },
+        "search_keywords": {
+          "name": "search_keywords",
+          "type": "jsonb",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "'[]'",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "json"
         }
       },
       "name": "projects",
@@ -477,6 +509,22 @@
           "comment": null,
           "enumItems": [],
           "mappedType": "datetime"
+        },
+        "screenshot_path": {
+          "name": "screenshot_path",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
         }
       },
       "name": "script_runs",

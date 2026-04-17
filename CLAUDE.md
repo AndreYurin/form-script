@@ -91,7 +91,8 @@ form-script/
             ├── ui/           — shadcn primitives (button, card, badge, input, switch, dialog)
             ├── CronConfig.tsx
             ├── AuthSection.tsx
-            ├── ScriptDocs.tsx
+            ├── SearchKeywordsConfig.tsx
+            ├── ScriptDocs.tsx       — run history table with load-more + screenshot modal
             ├── NoticeTable.tsx
             └── NoticeDetail.tsx
 ```
@@ -103,12 +104,13 @@ form-script/
 | GET    | `/api/projects`                               | list projects                                              |
 | GET    | `/api/projects/:id`                           | project detail + last run                                  |
 | PATCH  | `/api/projects/:id/cron`                      | update `cron_expression` / `cron_enabled`, reschedules job |
+| PATCH  | `/api/projects/:id/keywords`                  | replace `search_keywords` array                            |
 | GET    | `/api/projects/:id/notices`                   | paginated notices (filter by status)                       |
 | PATCH  | `/api/projects/:id/notices/:noticeId/reject`  | mark notice rejected                                       |
 | POST   | `/api/projects/:id/notices/:noticeId/collect` | run step2 for a single notice                              |
 | POST   | `/api/projects/:id/run/step1`                 | run step1 + sync                                           |
 | POST   | `/api/projects/:id/run/step2/bulk`            | run step2 for all `new` notices                            |
-| GET    | `/api/projects/:id/script-runs`               | last N runs                                                |
+| GET    | `/api/projects/:id/script-runs`               | paginated runs `{ runs, total }` (params: limit, offset)   |
 | GET    | `/api/projects/:id/script-runs/:runId`        | poll one run status + log                                  |
 | POST   | `/api/projects/:id/authorize`                 | spawn headed Playwright for manual login                   |
 | DELETE | `/api/projects/:id/authorize`                 | kill auth browser                                          |
@@ -116,9 +118,9 @@ form-script/
 
 ## Data Model
 
-- **projects**: `id, name, description, target_url, cron_expression, cron_enabled, created_at`
-- **notices**: `id, project_id, notice_id, organizer, title, status (new|details_collected|rejected|error), details (jsonb), collected_at, updated_at` — unique `(project_id, notice_id)`
-- **script_runs**: `id, project_id, notice_id?, script_name, status (running|success|error), log, started_at, finished_at`
+- **projects**: `id, name, description, target_url, cron_expression, cron_enabled, search_keywords (jsonb default []), created_at`
+- **notices**: `id, project_id, notice_id, organizer, title, search_keyword (text nullable), status (new|details_collected|rejected|error), details (jsonb), collected_at, updated_at` — unique `(project_id, notice_id)`
+- **script_runs**: `id, project_id, notice_id?, script_name, status (running|success|error), log, screenshot_path (text nullable), started_at, finished_at`
 
 Step 1 skips rejected notices on re-run. Step 2 skips `rejected` and `details_collected`.
 
@@ -135,7 +137,9 @@ See [SITE_DOCS.md](./SITE_DOCS.md) for goszakup.gov.kz structure notes.
 - **Headed auth**: `POST /api/projects/:id/authorize` opens a real browser on the same machine as the server. Close the window to finish.
 - **If site HTML structure changes**, update selectors in `step1-collect-ids.js` / `step2-collect-details.js` and verify via `docker compose up`, `npm run dev`, manual Step 1 run.
 - **The JSON-file → Postgres sync** is a deliberate bridge: scripts still write `data/*.json`, server reads them post-run and upserts. Long-term plan is to refactor scripts to write directly.
-- **Pre-commit sanity**: keep `SITE_DOCS.md` current, never commit `.env`, never commit `data/browser-profile/`.
+- **step1-collect-ids.js** now requires `--keyword <text>` arg; also supports `--screenshot-path <path>` (screenshot-only mode). The runner loops over `project.searchKeywords`, running screenshot phase then collection phase per keyword, all writing to a single `script_runs` row.
+- **Screenshots** are saved to `data/screenshots/<runId>-<slug>.png` and served via Express static at `/data/screenshots/`. The `screenshot_path` column on `script_runs` stores the relative path.
+- **Pre-commit sanity**: keep `SITE_DOCS.md` current, never commit `.env`, never commit `data/browser-profile/`, never commit `data/screenshots/*.png`.
 
 ---
 

@@ -13,6 +13,7 @@ function serializeProject(project: Project) {
     targetUrl: project.targetUrl,
     cronExpression: project.cronExpression,
     cronEnabled: project.cronEnabled,
+    searchKeywords: project.searchKeywords,
     createdAt: project.createdAt,
   };
 }
@@ -52,6 +53,29 @@ projectsRouter.get("/:id", async (req, res, next) => {
       : null;
 
     res.json({ ...serializeProject(project), lastRun: lastRunJson });
+  } catch (err) {
+    next(err);
+  }
+});
+
+projectsRouter.patch("/:id/keywords", async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const { searchKeywords } = req.body as { searchKeywords?: unknown };
+
+    if (
+      !Array.isArray(searchKeywords) ||
+      !searchKeywords.every((k) => typeof k === "string")
+    ) {
+      return res.status(400).json({ error: "searchKeywords must be an array of strings" });
+    }
+
+    const project = await req.em.findOne(Project, { id });
+    if (!project) return res.status(404).json({ error: "project not found" });
+
+    project.searchKeywords = searchKeywords;
+    await req.em.flush();
+    res.json(serializeProject(project));
   } catch (err) {
     next(err);
   }

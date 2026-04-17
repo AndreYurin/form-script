@@ -48,14 +48,17 @@ https://goszakup.gov.kz/ru/search/announce?filter[name]=...&filter[status][]=210
   6. **Сумма, тг.** — `<td nowrap><strong>710 338.80</strong></td>`
   7. **Статус** — Status text
 
-### Selectors used by scraper
+### Search form selectors (step1-collect-ids.js)
 
 | Element | Selector |
 |---------|----------|
-| Data rows | `#search-result tbody tr` |
+| "Наименование объявления" input | `input[name="filter[name]"]` |
+| Status checkboxes (210, 220, 240) | `input[name="filter[status][]"][value="210|220|240"]` |
+| Submit / "Найти" button | `button[type="submit"]` or `button.smb` (first match) |
+| Results table rows | `#search-result tbody tr` |
 | Announcement number | `td:first-child strong` (text e.g. `16776705-1`) |
 | Organizer | `td:nth-child(2) small` (text starts with `Организатор:`) |
-| Announcement link | `td:nth-child(2) a[href]` (href = `/ru/announce/index/{id}`) |
+| Title | Full text of `td:nth-child(2)` with organizer small text stripped |
 
 ### Pagination
 

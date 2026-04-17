@@ -21,7 +21,7 @@ const STATUS_LABEL: Record<NoticeStatus, string> = {
   error: "ошибка",
 };
 
-export function NoticeTable({ projectId }: { projectId: number }) {
+export function NoticeTable({ projectId, hasKeywords }: { projectId: number; hasKeywords: boolean }) {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Notice | null>(null);
@@ -87,7 +87,8 @@ export function NoticeTable({ projectId }: { projectId: number }) {
                 size="sm"
                 variant="outline"
                 onClick={() => runStep1.mutate()}
-                disabled={runStep1.isPending}
+                disabled={runStep1.isPending || !hasKeywords}
+                title={!hasKeywords ? "Добавьте ключевые слова поиска перед запуском" : undefined}
               >
                 {runStep1.isPending ? "Запускаю..." : "Запустить Step 1"}
               </Button>
@@ -108,6 +109,7 @@ export function NoticeTable({ projectId }: { projectId: number }) {
                 <th className="px-4 py-2 w-32">ID</th>
                 <th className="px-4 py-2">Организатор</th>
                 <th className="px-4 py-2">Название</th>
+                <th className="px-4 py-2 w-36">Ключевое слово</th>
                 <th className="px-4 py-2 w-32">Статус</th>
                 <th className="px-4 py-2 w-40">Собрано</th>
                 <th className="px-4 py-2 w-60 text-right">Действия</th>
@@ -124,6 +126,9 @@ export function NoticeTable({ projectId }: { projectId: number }) {
                       <button className="underline hover:no-underline" onClick={() => setSelected(r)}>
                         {r.title ?? "(без названия)"}
                       </button>
+                    </td>
+                    <td className="px-4 py-2 text-xs text-muted-foreground">
+                      {r.searchKeyword ?? "—"}
                     </td>
                     <td className="px-4 py-2">
                       <Badge variant={STATUS_VARIANT[r.status]}>{STATUS_LABEL[r.status]}</Badge>
@@ -156,7 +161,7 @@ export function NoticeTable({ projectId }: { projectId: number }) {
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                     Пусто. Запустите Step 1, чтобы собрать объявления.
                   </td>
                 </tr>

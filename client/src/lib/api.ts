@@ -12,6 +12,7 @@ export interface Project {
   targetUrl: string;
   cronExpression: string;
   cronEnabled: boolean;
+  searchKeywords: string[];
   createdAt: string;
 }
 
@@ -27,6 +28,7 @@ export interface Notice {
   noticeId: string;
   organizer: string | null;
   title: string | null;
+  searchKeyword: string | null;
   status: NoticeStatus;
   details: Record<string, unknown> | null;
   collectedAt: string | null;
@@ -49,8 +51,14 @@ export interface ScriptRun {
   scriptName: string;
   status: ScriptRunStatus;
   log: string;
+  screenshotPath: string | null;
   startedAt: string;
   finishedAt: string | null;
+}
+
+export interface ScriptRunsResponse {
+  runs: ScriptRun[];
+  total: number;
 }
 
 export interface AuthStatus {
@@ -64,8 +72,8 @@ export const queries = {
   getProject: (id: number) => api.get<ProjectDetail>(`/projects/${id}`).then((r) => r.data),
   listNotices: (id: number, params: { status?: string; page?: number; pageSize?: number }) =>
     api.get<NoticeListResponse>(`/projects/${id}/notices`, { params }).then((r) => r.data),
-  listScriptRuns: (id: number, limit = 20) =>
-    api.get<ScriptRun[]>(`/projects/${id}/script-runs`, { params: { limit } }).then((r) => r.data),
+  listScriptRuns: (id: number, limit = 50, offset = 0) =>
+    api.get<ScriptRunsResponse>(`/projects/${id}/script-runs`, { params: { limit, offset } }).then((r) => r.data),
   getScriptRun: (id: number, runId: number) =>
     api.get<ScriptRun>(`/projects/${id}/script-runs/${runId}`).then((r) => r.data),
   authStatus: (id: number) =>
@@ -75,6 +83,8 @@ export const queries = {
 export const mutations = {
   updateCron: (id: number, body: { cronExpression?: string; cronEnabled?: boolean }) =>
     api.patch<Project>(`/projects/${id}/cron`, body).then((r) => r.data),
+  updateKeywords: (id: number, searchKeywords: string[]) =>
+    api.patch<Project>(`/projects/${id}/keywords`, { searchKeywords }).then((r) => r.data),
   rejectNotice: (projectId: number, noticeRowId: number) =>
     api.patch<Notice>(`/projects/${projectId}/notices/${noticeRowId}/reject`).then((r) => r.data),
   collectNotice: (projectId: number, noticeRowId: number) =>

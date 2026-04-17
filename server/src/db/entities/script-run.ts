@@ -38,6 +38,9 @@ export class ScriptRun {
   @Property({ type: "text", default: "" })
   log: string = "";
 
+  @Property({ type: "text", fieldName: "screenshot_path", nullable: true })
+  screenshotPath?: string | null;
+
   @Property({
     type: "timestamptz",
     fieldName: "started_at",

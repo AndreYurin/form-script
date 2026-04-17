@@ -17,6 +17,13 @@ The system SHALL display a documentation panel in each project's dashboard listi
 - **WHEN** the scripts panel renders
 - **THEN** each entry shows: script file name, human-readable title, multi-line description explaining what the script does, and the timestamp of the last successful run
 
+### Requirement: Script documentation covers current feature set
+The ScriptDocs component and associated documentation SHALL describe: the `--keyword` argument accepted by step-1, the sequential per-keyword execution model, the screenshot pre-run phase, the `search_keywords` project configuration, and the `search_keyword` column on notices.
+
+#### Scenario: Admin reads script docs
+- **WHEN** an admin views the ScriptDocs panel on the dashboard
+- **THEN** the documentation accurately describes the dynamic search flow, keyword configuration, and screenshot verification feature
+
 ### Requirement: Last run status per script
 The system SHALL show the outcome of the most recent run for each script in the documentation panel.
 

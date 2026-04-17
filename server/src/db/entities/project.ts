@@ -28,6 +28,9 @@ export class Project {
   @Property({ type: "boolean", fieldName: "cron_enabled", default: false })
   cronEnabled: boolean = false;
 
+  @Property({ type: "json", fieldName: "search_keywords", default: [] })
+  searchKeywords: string[] = [];
+
   @Property({
     type: "timestamptz",
     fieldName: "created_at",
