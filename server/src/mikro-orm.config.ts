@@ -6,9 +6,7 @@ import { Project } from "./db/entities/project.js";
 import { Notice } from "./db/entities/notice.js";
 import { ScriptRun } from "./db/entities/script-run.js";
 
-const connectionString =
-  process.env.DATABASE_URL ??
-  "postgres://form_script:form_script@localhost:5432/form_script";
+const connectionString = process.env.DATABASE_URL;
 
 export default defineConfig({
   clientUrl: connectionString,

@@ -12,6 +12,9 @@ import { runsRouter } from "./routes/runs.js";
 import { authRouter, killAllAuthProcesses } from "./routes/auth.js";
 import { initCronScheduler, stopAllCronJobs } from "./cron/scheduler.js";
 import type { Server } from "node:http";
+import { config } from "dotenv";
+
+config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,10 +53,17 @@ if (process.env.NODE_ENV === "production") {
   });
 }
 
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error("[api] error", err);
-  res.status(500).json({ error: err.message ?? "internal error" });
-});
+app.use(
+  (
+    err: Error,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction,
+  ) => {
+    console.error("[api] error", err);
+    res.status(500).json({ error: err.message ?? "internal error" });
+  },
+);
 
 let httpServer: Server | null = null;
 let shuttingDown = false;

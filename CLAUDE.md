@@ -1,5 +1,38 @@
 # form-script — goszakup.gov.kz dashboard
 
+## Agent Rules (MANDATORY)
+
+### 1. Playwright MCP Access Required
+
+Before starting any scraper or script work, verify that Playwright MCP tools are available (`mcp__playwright__*`).
+
+**If Playwright MCP is not available: STOP immediately and notify the user:**
+
+> "Playwright MCP is not available in this session. Please start Claude with Playwright MCP enabled before continuing."
+
+Do not attempt to guess selectors or site structure without live browser access.
+
+### 2. Always Test Scripts and Verify Results
+
+Every script change or new script must be tested end-to-end before the task is considered done:
+
+- Use Playwright MCP to open the target site and verify selectors are live and correct.
+- Run the actual script (via `node index.js`, `npm run dev`, or the relevant command) and capture real output.
+- Confirm the output matches expected behavior — records found, pages scraped, data written.
+- If a test fails, fix the issue and re-test. Never report success without actual verified output.
+
+### 3. No Half-Finished Work
+
+Every completed task must be fully functional and ready to use or ready for review:
+
+- All code changes must be wired up end-to-end (not just stubs or TODOs).
+- The dev server must start cleanly with no errors after the change.
+- Any UI change must be visible and working in the browser.
+- Any scraper change must produce real data from the live site.
+- Do not leave the codebase in a broken or partially-implemented state.
+
+---
+
 ## Project Purpose
 
 Local fullstack admin tool that scrapes the Kazakhstan government procurement
