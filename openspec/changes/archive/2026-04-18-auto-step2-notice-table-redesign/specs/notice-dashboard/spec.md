@@ -1,10 +1,4 @@
-# Notice Dashboard Specification
-
-## Purpose
-
-Per-project admin dashboard listing notices with status, detail view, reject action, and bulk Step-2 trigger.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Notice table
 The system SHALL display all notices for the active project in a paginated table. Each row MUST show the following primary columns in this order: **ID** (linked to the notice's source URL), **Название** (clickable to open the in-app detail view), **Организатор**, **Сумма**, **Дата завершения**. Secondary metadata — `status`, `collected-at` timestamp, and `search_keyword` — MUST NOT occupy their own columns; they MUST be accessible through the row's overflow (3-dot) menu in the rightmost column. The rightmost column SHALL also host the row-level action buttons "Заполнить" and "Не подходит".
@@ -36,37 +30,7 @@ The system SHALL allow the admin to mark any notice (except those already `rejec
 - **WHEN** a notice has `status = 'rejected'`
 - **THEN** the "Заполнить" button on that row is disabled
 
-### Requirement: Notice detail view
-The system SHALL allow the admin to expand or navigate to a notice to see all collected detail fields (all fields stored in the notice record).
-
-#### Scenario: Admin views full notice details
-- **WHEN** admin clicks on a notice row or an "expand" control
-- **THEN** all available fields (e.g., deadline, amount, description, contact info) are displayed
-
-### Requirement: Bulk "Собрать информацию" button
-The system SHALL show a prominent "Собрать информацию для всех" button above the table that triggers bulk Step-2 for all unprocessed notices.
-
-#### Scenario: Bulk action button state
-- **WHEN** there are no notices with `status = 'new'`
-- **THEN** the bulk button is disabled
-
-### Requirement: Notice listing via MikroORM EntityManager
-The system SHALL serve the paginated notice list through `EntityManager.findAndCount` on the `Notice` entity, using the request-scoped EM installed by `RequestContext` middleware. The response shape (items, total, page, limit) MUST remain identical to the drizzle implementation.
-
-#### Scenario: Paginated notice list for a project
-- **WHEN** the client calls `GET /api/projects/:id/notices?page=1&limit=50`
-- **THEN** the handler uses the request-scoped EM to call `em.findAndCount(Notice, { project: id }, { limit, offset, orderBy: { collectedAt: 'DESC' } })` and returns the same JSON envelope as before
-
-#### Scenario: Status filter preserved
-- **WHEN** the client includes `?status=new` in the request
-- **THEN** the EntityManager query adds `{ status: 'new' }` to the filter and returns only matching notices
-
-### Requirement: Reject action via managed entity
-The system SHALL implement "mark notice as rejected" by loading the managed `Notice` entity via the request-scoped EM, mutating `status` to `'rejected'`, and flushing — replacing the prior drizzle `update().set().where()` call.
-
-#### Scenario: Admin rejects a notice via EM
-- **WHEN** the client calls `PATCH /api/projects/:id/notices/:noticeId/reject`
-- **THEN** the handler loads the `Notice` via the request-scoped EM, sets `status = 'rejected'`, and calls `em.flush()` within the request context
+## ADDED Requirements
 
 ### Requirement: Per-row Step-2 action labelled "Заполнить"
 The system SHALL present the per-row Step-2 trigger with the label "Заполнить" (replacing the legacy "Собрать" label) while preserving the existing behavior of invoking `POST /api/projects/:id/notices/:noticeId/collect`. The button MUST be disabled for notices with `status` in (`'rejected'`, `'details_collected'`). The label change SHALL NOT affect any API route or payload.

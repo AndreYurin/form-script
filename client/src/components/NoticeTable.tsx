@@ -1,9 +1,18 @@
 import { useState } from "react";
+import { MoreVertical } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queries, mutations, type Notice, type NoticeStatus } from "@/lib/api";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { formatDateTime } from "@/lib/utils";
 import { NoticeDetail } from "./NoticeDetail";
 
@@ -21,9 +30,40 @@ const STATUS_LABEL: Record<NoticeStatus, string> = {
   error: "ошибка",
 };
 
+interface NoticeSummary {
+  amount: string | null;
+  endDate: string | null;
+  url: string | null;
+}
+
+function extractNoticeSummary(notice: Notice): NoticeSummary {
+  const details = notice.details;
+  if (!details || typeof details !== "object") {
+    return { amount: null, endDate: null, url: null };
+  }
+
+  const readString = (key: string): string | null => {
+    const value = (details as Record<string, unknown>)[key];
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  };
+
+  return {
+    amount: readString("amount"),
+    endDate: readString("endDate"),
+    url: readString("url"),
+  };
+}
+
+function noticeIdToFallbackUrl(noticeId: string): string {
+  const numericPart = noticeId.split("-")[0];
+  return `https://goszakup.gov.kz/ru/announce/index/${numericPart}`;
+}
+
 export function NoticeTable({ projectId, hasKeywords }: { projectId: number; hasKeywords: boolean }) {
   const qc = useQueryClient();
-  const [page, setPage] = useState(1);
+  const page = 1;
   const [selected, setSelected] = useState<Notice | null>(null);
 
   const { data } = useQuery({
@@ -97,54 +137,63 @@ export function NoticeTable({ projectId, hasKeywords }: { projectId: number; has
                 onClick={() => bulk.mutate()}
                 disabled={bulk.isPending || !hasNew}
               >
-                {bulk.isPending ? "Собираю..." : "Собрать для всех"}
+                {bulk.isPending ? "Собираю..." : "Собрать информацию для всех"}
               </Button>
             </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm table-fixed">
             <thead className="bg-muted/50 text-left">
               <tr>
-                <th className="px-4 py-2 w-32">ID</th>
-                <th className="px-4 py-2">Организатор</th>
+                <th className="px-4 py-2 w-32">Номер</th>
                 <th className="px-4 py-2">Название</th>
-                <th className="px-4 py-2 w-36">Ключевое слово</th>
-                <th className="px-4 py-2 w-32">Статус</th>
-                <th className="px-4 py-2 w-40">Собрано</th>
-                <th className="px-4 py-2 w-60 text-right">Действия</th>
+                <th className="px-4 py-2">Организатор</th>
+                <th className="px-4 py-2 w-40">Сумма</th>
+                <th className="px-4 py-2 w-44">Дата завершения</th>
+                <th className="px-4 py-2 w-64 text-right">Действия</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => {
-                const disabled = r.status === "rejected" || r.status === "details_collected";
+                const summary = extractNoticeSummary(r);
+                const href = summary.url ?? noticeIdToFallbackUrl(r.noticeId);
+                const fillDisabled =
+                  r.status === "rejected" ||
+                  r.status === "details_collected" ||
+                  collect.isPending;
                 return (
-                  <tr key={r.id} className="border-t hover:bg-muted/30">
-                    <td className="px-4 py-2 font-mono text-xs">{r.noticeId}</td>
-                    <td className="px-4 py-2 truncate max-w-[240px]">{r.organizer ?? "—"}</td>
-                    <td className="px-4 py-2 truncate max-w-[320px]">
-                      <button className="underline hover:no-underline" onClick={() => setSelected(r)}>
+                  <tr key={r.id} className="border-t hover:bg-muted/30 align-top">
+                    <td className="px-4 py-2 font-mono text-xs break-words">
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary underline underline-offset-2 hover:no-underline"
+                      >
+                        {r.noticeId}
+                      </a>
+                    </td>
+                    <td className="px-4 py-2 break-words">
+                      <button
+                        className="text-left underline hover:no-underline"
+                        onClick={() => setSelected(r)}
+                      >
                         {r.title ?? "(без названия)"}
                       </button>
                     </td>
-                    <td className="px-4 py-2 text-xs text-muted-foreground">
-                      {r.searchKeyword ?? "—"}
-                    </td>
+                    <td className="px-4 py-2 break-words">{r.organizer ?? "—"}</td>
+                    <td className="px-4 py-2 break-words">{summary.amount ?? "—"}</td>
+                    <td className="px-4 py-2 break-words">{summary.endDate ?? "—"}</td>
                     <td className="px-4 py-2">
-                      <Badge variant={STATUS_VARIANT[r.status]}>{STATUS_LABEL[r.status]}</Badge>
-                    </td>
-                    <td className="px-4 py-2 text-xs text-muted-foreground">
-                      {formatDateTime(r.collectedAt)}
-                    </td>
-                    <td className="px-4 py-2">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex justify-end items-center gap-2 flex-wrap">
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={disabled || collect.isPending}
+                          disabled={fillDisabled}
                           onClick={() => collect.mutate(r.id)}
                         >
-                          Собрать
+                          Заполнить
                         </Button>
                         <Button
                           size="sm"
@@ -154,6 +203,40 @@ export function NoticeTable({ projectId, hasKeywords }: { projectId: number; has
                         >
                           Не подходит
                         </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="icon" variant="ghost" className="h-9 w-9" aria-label="Подробнее">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent>
+                            <DropdownMenuLabel>Метаданные</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onSelect={(e) => e.preventDefault()}
+                              className="flex-col items-start gap-1"
+                            >
+                              <span className="text-xs text-muted-foreground">Статус</span>
+                              <Badge variant={STATUS_VARIANT[r.status]}>
+                                {STATUS_LABEL[r.status]}
+                              </Badge>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onSelect={(e) => e.preventDefault()}
+                              className="flex-col items-start gap-1"
+                            >
+                              <span className="text-xs text-muted-foreground">Собрано</span>
+                              <span className="text-sm">{formatDateTime(r.collectedAt)}</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onSelect={(e) => e.preventDefault()}
+                              className="flex-col items-start gap-1"
+                            >
+                              <span className="text-xs text-muted-foreground">Ключевое слово</span>
+                              <span className="text-sm">{r.searchKeyword ?? "—"}</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </td>
                   </tr>
@@ -161,7 +244,7 @@ export function NoticeTable({ projectId, hasKeywords }: { projectId: number; has
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
                     Пусто. Запустите Step 1, чтобы собрать объявления.
                   </td>
                 </tr>

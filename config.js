@@ -7,7 +7,9 @@
  * USE_SYSTEM_CHROME - When true, connects to the user's Chrome profile so existing
  *                     cookies/sessions are reused (requires Chrome to be closed first).
  * CHROME_USER_DATA  - Path to Chrome's user-data directory (macOS default shown).
- * HEADLESS          - Run browser without a visible window. Set false to watch the process.
+ * HEADLESS          - Default for the headed browser-auth flow. Step 1 / Step 2
+ *                     CLI scripts override this via `launchBrowser({ headless })`
+ *                     and default to headless unless `--headed` is passed.
  * PAGE_LOAD_TIMEOUT - Max time (ms) to wait for a page to load.
  * NAV_DELAY         - Polite delay (ms) between page navigations to avoid rate-limiting.
  * FILES.ids         - Stores matched announcement IDs (step 1 output).

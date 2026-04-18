@@ -6,6 +6,20 @@ interface Props {
   onClose: () => void;
 }
 
+const DETAIL_LABELS: Record<string, string> = {
+  id: "Номер",
+  number: "Номер",
+  organizer: "Организатор",
+  amount: "Сумма",
+  endDate: "Дата завершения",
+  url: "Ссылка",
+  title: "Название",
+};
+
+function labelFor(key: string): string {
+  return DETAIL_LABELS[key] ?? key;
+}
+
 export function NoticeDetail({ notice, onClose }: Props) {
   if (!notice) return null;
   const entries = Object.entries(notice.details ?? {});
@@ -15,9 +29,9 @@ export function NoticeDetail({ notice, onClose }: Props) {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {notice.title ?? notice.noticeId}
+            <span className="block break-words">{notice.title ?? notice.noticeId}</span>
             <span className="block text-sm font-normal text-muted-foreground">
-              ID: {notice.noticeId}
+              Номер: {notice.noticeId}
             </span>
           </DialogTitle>
         </DialogHeader>
@@ -27,7 +41,7 @@ export function NoticeDetail({ notice, onClose }: Props) {
           <div className="space-y-3">
             {entries.map(([k, v]) => (
               <div key={k} className="border-b last:border-0 pb-2 last:pb-0">
-                <div className="text-xs uppercase tracking-wider text-muted-foreground">{k}</div>
+                <div className="text-xs tracking-wider text-muted-foreground">{labelFor(k)}</div>
                 <div className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm">
                   {typeof v === "string" ? v : JSON.stringify(v, null, 2)}
                 </div>

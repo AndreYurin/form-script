@@ -458,7 +458,8 @@
           "enumItems": [
             "running",
             "success",
-            "error"
+            "error",
+            "cancelled"
           ],
           "mappedType": "enum"
         },

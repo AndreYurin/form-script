@@ -7,6 +7,7 @@
  * Optional arg:
  *   --screenshot-path <path>  When provided, takes a screenshot after search results load,
  *                             saves it to the given path, then exits WITHOUT collecting IDs.
+ *   --headed                  Launch Chromium with a visible window (default: headless).
  *
  * Site structure (search results page):
  *   - Table with id="search-result" and DataTables wrapper
@@ -35,7 +36,7 @@ async function sleep(ms) {
 // Parse CLI arguments
 function parseArgs() {
   const args = process.argv.slice(2);
-  const result = { keyword: null, screenshotPath: null };
+  const result = { keyword: null, screenshotPath: null, headed: false };
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--keyword' && args[i + 1]) {
@@ -44,6 +45,8 @@ function parseArgs() {
     } else if (args[i] === '--screenshot-path' && args[i + 1]) {
       result.screenshotPath = args[i + 1];
       i++;
+    } else if (args[i] === '--headed') {
+      result.headed = true;
     }
   }
 
@@ -110,6 +113,7 @@ async function parseSearchPage(page) {
   }
 
   const matches = [];
+  const ORGANIZER_FILTER = /школа|образовательн|ясл|гимназ|лице/i;
 
   for (const row of rows) {
     // Extract announcement number from first <td> > <strong>
@@ -138,6 +142,11 @@ async function parseSearchPage(page) {
       .trim()
       .split('\n')[0]
       .trim();
+
+    if (!ORGANIZER_FILTER.test(organizer)) {
+      log.info(`Skipped (organizer no match): ${fullNumber} — ${organizer.substring(0, 80)}`);
+      continue;
+    }
 
     matches.push({ number: fullNumber, id, organizer, title });
     log.ok(`Found: ${fullNumber} — ${(organizer || title || '').substring(0, 80)}`);
@@ -177,7 +186,7 @@ async function goNextPage(page) {
 }
 
 async function main() {
-  const { keyword, screenshotPath } = parseArgs();
+  const { keyword, screenshotPath, headed } = parseArgs();
 
   if (!keyword) {
     log.error('Missing required argument: --keyword <text>');
@@ -186,7 +195,7 @@ async function main() {
 
   log.info(`=== Step 1: Collecting announcement IDs (keyword: "${keyword}") ===`);
 
-  const context = await launchBrowser();
+  const context = await launchBrowser({ headless: !headed });
   const page = await context.newPage();
 
   try {

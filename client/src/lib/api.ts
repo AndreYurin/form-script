@@ -42,7 +42,7 @@ export interface NoticeListResponse {
   total: number;
 }
 
-export type ScriptRunStatus = "running" | "success" | "error";
+export type ScriptRunStatus = "running" | "success" | "error" | "cancelled";
 
 export interface ScriptRun {
   id: number;
@@ -97,4 +97,19 @@ export const mutations = {
     api.post<{ status: string; pid: number }>(`/projects/${projectId}/authorize`).then((r) => r.data),
   stopAuth: (projectId: number) =>
     api.delete<{ status: string }>(`/projects/${projectId}/authorize`).then((r) => r.data),
+  stopRun: (projectId: number, runId: number) =>
+    api
+      .post<{ ok: true; alreadyFinished?: boolean }>(
+        `/projects/${projectId}/script-runs/${runId}/stop`,
+      )
+      .then((r) => r.data),
+  stopAll: (projectId: number) =>
+    api
+      .post<{
+        ok: true;
+        cronDisabled: boolean;
+        cancelledRuns: number;
+        totalRunning: number;
+      }>(`/projects/${projectId}/stop-all`)
+      .then((r) => r.data),
 };

@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { queries, type ScriptRun } from "@/lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import axios from "axios";
+import { mutations, queries, type ScriptRun } from "@/lib/api";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,13 +21,27 @@ function durationLabel(run: ScriptRun): string {
 function StatusBadge({ status }: { status: string }) {
   if (status === "success") return <Badge variant="success">success</Badge>;
   if (status === "running") return <Badge variant="secondary">running</Badge>;
+  if (status === "cancelled") return <Badge variant="outline">Отменён</Badge>;
   return <Badge variant="destructive">error</Badge>;
+}
+
+function extractErrorMessage(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data as { error?: string } | undefined;
+    if (data?.error) return data.error;
+    return err.message;
+  }
+  if (err instanceof Error) return err.message;
+  return "Unknown error";
 }
 
 export function ScriptDocs({ projectId }: { projectId: number }) {
   const [offset, setOffset] = useState(0);
   const [allRuns, setAllRuns] = useState<ScriptRun[]>([]);
   const [screenshotRun, setScreenshotRun] = useState<ScriptRun | null>(null);
+  const [stopError, setStopError] = useState<string | null>(null);
+
+  const queryClient = useQueryClient();
 
   const { data } = useQuery({
     queryKey: ["script-runs", projectId, offset],
@@ -46,6 +61,18 @@ export function ScriptDocs({ projectId }: { projectId: number }) {
     refetchInterval: offset === 0 ? 5_000 : undefined,
   });
 
+  const stopMutation = useMutation({
+    mutationFn: (runId: number) => mutations.stopRun(projectId, runId),
+    onSuccess: () => {
+      setStopError(null);
+      setOffset(0);
+      queryClient.invalidateQueries({ queryKey: ["script-runs", projectId] });
+    },
+    onError: (err) => {
+      setStopError(extractErrorMessage(err));
+    },
+  });
+
   const total = data?.total ?? 0;
   const hasMore = allRuns.length < total;
 
@@ -60,6 +87,18 @@ export function ScriptDocs({ projectId }: { projectId: number }) {
           <CardTitle>История запусков</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
+          {stopError && (
+            <div className="border-b bg-destructive/10 text-destructive text-xs px-4 py-2 flex items-center justify-between">
+              <span>Не удалось остановить: {stopError}</span>
+              <button
+                className="ml-4 text-muted-foreground hover:text-foreground"
+                onClick={() => setStopError(null)}
+                aria-label="Закрыть"
+              >
+                ×
+              </button>
+            </div>
+          )}
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-left">
               <tr>
@@ -68,7 +107,7 @@ export function ScriptDocs({ projectId }: { projectId: number }) {
                 <th className="px-4 py-2 w-28">Статус</th>
                 <th className="px-4 py-2 w-40">Начало</th>
                 <th className="px-4 py-2 w-24">Длит.</th>
-                <th className="px-4 py-2 w-10" />
+                <th className="px-4 py-2 w-28" />
               </tr>
             </thead>
             <tbody>
@@ -86,16 +125,28 @@ export function ScriptDocs({ projectId }: { projectId: number }) {
                     {durationLabel(r)}
                   </td>
                   <td className="px-4 py-2">
-                    {r.screenshotPath && (
-                      <button
-                        className="text-muted-foreground hover:text-foreground"
-                        onClick={() => setScreenshotRun(r)}
-                        title="Просмотр скриншота"
-                        aria-label="Просмотр скриншота"
-                      >
-                        📷
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2 justify-end">
+                      {r.status === "running" && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={stopMutation.isPending && stopMutation.variables === r.id}
+                          onClick={() => stopMutation.mutate(r.id)}
+                        >
+                          Stop
+                        </Button>
+                      )}
+                      {r.screenshotPath && (
+                        <button
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => setScreenshotRun(r)}
+                          title="Просмотр скриншота"
+                          aria-label="Просмотр скриншота"
+                        >
+                          📷
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

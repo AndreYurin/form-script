@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { Project } from "../db/entities/project.js";
 import { ScriptRun } from "../db/entities/script-run.js";
+import { ScriptRunStatus } from "../db/enums.js";
 import { rescheduleProject } from "../cron/scheduler.js";
+import { cancelRun, stopProject } from "../runner/runner.js";
 
 export const projectsRouter = Router();
 
@@ -109,6 +111,42 @@ projectsRouter.patch("/:id/cron", async (req, res, next) => {
     await req.em.flush();
     await rescheduleProject(project);
     res.json(serializeProject(project));
+  } catch (err) {
+    next(err);
+  }
+});
+
+projectsRouter.post("/:id/stop-all", async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const project = await req.em.findOne(Project, { id });
+    if (!project) return res.status(404).json({ error: "project not found" });
+
+    project.cronEnabled = false;
+    await req.em.flush();
+    await rescheduleProject(project);
+
+    // Set the project-wide stop flag BEFORE killing children so any
+    // bulk loops bail before spawning the next iteration.
+    stopProject(id);
+
+    const runningRuns = await req.em.find(ScriptRun, {
+      project: id,
+      status: ScriptRunStatus.Running,
+    });
+
+    let cancelledCount = 0;
+    for (const run of runningRuns) {
+      const result = await cancelRun(run.id);
+      if (result.found || !result.alreadyFinished) cancelledCount++;
+    }
+
+    res.json({
+      ok: true,
+      cronDisabled: true,
+      cancelledRuns: cancelledCount,
+      totalRunning: runningRuns.length,
+    });
   } catch (err) {
     next(err);
   }

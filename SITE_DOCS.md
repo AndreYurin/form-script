@@ -86,6 +86,14 @@ https://goszakup.gov.kz/ru/announce/index/{id}
 
 Where `{id}` is the numeric part before the dash (e.g. `16776705` from `16776705-1`).
 
+**Fallback URL (frontend)**: The notice table renders the ID cell as an anchor
+link. When `notice.details.url` is absent (Step 2 has not run yet), the client
+synthesizes the URL from `notice.noticeId` using this exact pattern:
+`https://goszakup.gov.kz/ru/announce/index/{noticeId}` (splitting on `-` to
+strip any lot suffix). When Step 2 has run, the stored `details.url` is used
+verbatim. Keep this pattern in sync with any site route changes — a broken
+pattern silently breaks all unfilled rows.
+
 ### Page Structure
 
 The page has tabs:

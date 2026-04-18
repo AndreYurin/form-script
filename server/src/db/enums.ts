@@ -9,4 +9,5 @@ export enum ScriptRunStatus {
   Running = "running",
   Success = "success",
   Error = "error",
+  Cancelled = "cancelled",
 }

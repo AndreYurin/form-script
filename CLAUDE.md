@@ -157,6 +157,8 @@ form-script/
 
 Step 1 skips rejected notices on re-run. Step 2 skips `rejected` and `details_collected`.
 
+**Step 1 → Step 2 auto-chain**: `runStep1` (invoked from manual `POST /api/projects/:id/run/step1` and from cron) finalizes its `ScriptRun` row and then calls `runStep2Bulk(projectId)` in the same awaited async path. Bulk Step 2 still creates one `ScriptRun` per notice; errors are appended to the Step-1 `log` without flipping its terminal status. Scheduled cron ticks therefore run Step 1 + full Step 2 sweep before resolving — configure `cron_expression` with enough headroom for both phases to avoid overlap with the next tick. The manual bulk button (`/api/projects/:id/run/step2/bulk`) is retained for recovery.
+
 ## Site Documentation
 
 See [SITE_DOCS.md](./SITE_DOCS.md) for goszakup.gov.kz structure notes.

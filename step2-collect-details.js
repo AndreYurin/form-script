@@ -31,6 +31,12 @@ async function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Optional flag: `--headed` launches a visible browser window. Default is headless.
+function parseArgs() {
+  const args = process.argv.slice(2);
+  return { headed: args.includes('--headed') };
+}
+
 /**
  * Extract announcement details from the detail page.
  * Returns an object with the five required fields or null on failure.
@@ -154,7 +160,8 @@ async function main() {
     process.exit(0);
   }
 
-  const context = await launchBrowser();
+  const { headed } = parseArgs();
+  const context = await launchBrowser({ headless: !headed });
   const page = await context.newPage();
 
   for (let i = 0; i < pending.length; i++) {

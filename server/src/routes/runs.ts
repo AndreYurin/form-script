@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { ScriptRun } from "../db/entities/script-run.js";
+import { ScriptRunStatus } from "../db/enums.js";
 import { runStep1 } from "../runner/runs.js";
+import { cancelRun } from "../runner/runner.js";
 
 export const runsRouter = Router();
 
@@ -58,6 +60,33 @@ runsRouter.post("/:id/run/step1", async (req, res, next) => {
     const projectId = Number(req.params.id);
     const run = await runStep1(projectId);
     res.json({ runId: run.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+runsRouter.post("/:id/script-runs/:runId/stop", async (req, res, next) => {
+  try {
+    const projectId = Number(req.params.id);
+    const runId = Number(req.params.runId);
+
+    const row = await req.em.findOne(ScriptRun, {
+      id: runId,
+      project: projectId,
+    });
+
+    if (!row) return res.status(404).json({ error: "run not found" });
+    if (row.status !== ScriptRunStatus.Running) {
+      return res
+        .status(409)
+        .json({ error: `run is not running (status=${row.status})` });
+    }
+
+    const result = await cancelRun(runId);
+    if (result.alreadyFinished) {
+      return res.json({ ok: true, alreadyFinished: true });
+    }
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

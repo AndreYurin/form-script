@@ -5,7 +5,13 @@ import { Notice } from "../db/entities/notice.js";
 import { Project } from "../db/entities/project.js";
 import { ScriptRun } from "../db/entities/script-run.js";
 import { NoticeStatus, ScriptRunStatus } from "../db/enums.js";
-import { runScript } from "./runner.js";
+import {
+  clearCancellation,
+  clearProjectStop,
+  isCancelled,
+  isProjectStopped,
+  runScript,
+} from "./runner.js";
 import { syncStep1Output, syncStep2Output } from "./sync.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -29,7 +35,17 @@ function slugify(text: string): string {
     .substring(0, 60);
 }
 
+async function appendRunLog(runId: number, text: string): Promise<void> {
+  const em = getOrm().em.fork();
+  const row = await em.findOneOrFail(ScriptRun, { id: runId });
+  row.log = (row.log || "") + text;
+  await em.flush();
+}
+
 export async function runStep1(projectId: number): Promise<ScriptRun> {
+  // A fresh run clears any previous project-wide stop signal.
+  clearProjectStop(projectId);
+
   const em = getOrm().em.fork();
   const project = await em.findOneOrFail(Project, { id: projectId });
 
@@ -54,24 +70,28 @@ export async function runStep1(projectId: number): Promise<ScriptRun> {
   await runEm.persistAndFlush(run);
   const runId = run.id;
 
-  const appendLog = async (text: string) => {
-    const logEm = getOrm().em.fork();
-    const row = await logEm.findOneOrFail(ScriptRun, { id: runId });
-    row.log = (row.log || "") + text;
-    await logEm.flush();
-  };
+  // Defensive: a previous run that reused the same id (monotonic, shouldn't) left
+  // a stale flag behind. Reset before starting.
+  clearCancellation(runId);
 
   let overallSuccess = true;
+  let cancelled = false;
 
   for (const keyword of keywords) {
-    await appendLog(`\n[keyword: ${keyword}] Starting...\n`);
+    if (isCancelled(runId) || isProjectStopped(projectId)) {
+      cancelled = true;
+      await appendRunLog(runId, `\n[cancelled] Skipping remaining keywords.\n`);
+      break;
+    }
+
+    await appendRunLog(runId, `\n[keyword: ${keyword}] Starting...\n`);
 
     // Phase A: screenshot
     const slug = slugify(keyword);
     const screenshotFile = `${runId}-${slug}.png`;
     const screenshotPath = path.join(SCREENSHOTS_DIR, screenshotFile);
 
-    await appendLog(`[keyword: ${keyword}] Taking screenshot...\n`);
+    await appendRunLog(runId, `[keyword: ${keyword}] Taking screenshot...\n`);
     try {
       await runScript({
         projectId,
@@ -90,15 +110,21 @@ export async function runStep1(projectId: number): Promise<ScriptRun> {
         await snapEm.flush();
       }
 
-      await appendLog(`[keyword: ${keyword}] Screenshot saved: ${screenshotFile}\n`);
+      await appendRunLog(runId, `[keyword: ${keyword}] Screenshot saved: ${screenshotFile}\n`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      await appendLog(`[keyword: ${keyword}] Screenshot failed: ${msg}\n`);
+      await appendRunLog(runId, `[keyword: ${keyword}] Screenshot failed: ${msg}\n`);
       // Continue with collection even if screenshot fails
     }
 
+    if (isCancelled(runId) || isProjectStopped(projectId)) {
+      cancelled = true;
+      await appendRunLog(runId, `\n[cancelled] Skipping remaining keywords.\n`);
+      break;
+    }
+
     // Phase B: real collection
-    await appendLog(`[keyword: ${keyword}] Collecting IDs...\n`);
+    await appendRunLog(runId, `[keyword: ${keyword}] Collecting IDs...\n`);
     try {
       await runScript({
         projectId,
@@ -109,10 +135,14 @@ export async function runStep1(projectId: number): Promise<ScriptRun> {
         logPrefix: `[keyword: ${keyword}] `,
       });
       await syncStep1Output(projectId, keyword);
-      await appendLog(`[keyword: ${keyword}] Done.\n`);
+      await appendRunLog(runId, `[keyword: ${keyword}] Done.\n`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      await appendLog(`[keyword: ${keyword}] Collection failed: ${msg}\n`);
+      await appendRunLog(runId, `[keyword: ${keyword}] Collection failed: ${msg}\n`);
+      if (isCancelled(runId)) {
+        cancelled = true;
+        break;
+      }
       overallSuccess = false;
     }
   }
@@ -120,10 +150,37 @@ export async function runStep1(projectId: number): Promise<ScriptRun> {
   // Finalize the run row
   const finalEm = getOrm().em.fork();
   const finalRun = await finalEm.findOneOrFail(ScriptRun, { id: runId });
-  finalRun.status = overallSuccess ? ScriptRunStatus.Success : ScriptRunStatus.Error;
+  const stopped = cancelled || isCancelled(runId) || isProjectStopped(projectId);
+  if (stopped) {
+    finalRun.status = ScriptRunStatus.Cancelled;
+  } else {
+    finalRun.status = overallSuccess ? ScriptRunStatus.Success : ScriptRunStatus.Error;
+  }
   finalRun.finishedAt = new Date();
   await finalEm.flush();
 
+  if (stopped) {
+    await appendRunLog(runId, `\n[step2-auto] Skipped because run was cancelled.\n`);
+    clearCancellation(runId);
+    return finalRun;
+  }
+
+  // Auto-chain Step 2 bulk unconditionally. Partial Step-1 failures still allow
+  // Step 2 to enrich the notices that did land. Errors are recorded in the
+  // Step-1 log without flipping its terminal status.
+  await appendRunLog(runId, `\n[step2-auto] Starting bulk Step 2 for new notices...\n`);
+  try {
+    const chainedRunIds = await runStep2Bulk(projectId, runId);
+    await appendRunLog(
+      runId,
+      `[step2-auto] Completed. ${chainedRunIds.length} notice(s) processed.\n`,
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await appendRunLog(runId, `[step2-auto] Bulk Step 2 failed: ${msg}\n`);
+  }
+
+  clearCancellation(runId);
   return finalRun;
 }
 
@@ -142,7 +199,17 @@ export async function runStep2ForNotice(
   return run;
 }
 
-export async function runStep2Bulk(projectId: number): Promise<number[]> {
+/**
+ * Run Step 2 for every `new` notice in the project.
+ *
+ * If `parentRunId` is provided (e.g. when chained from Step 1), the loop also
+ * respects cancellation on that parent — so stopping the Step-1 row halts the
+ * chained Step-2 sweep between notices.
+ */
+export async function runStep2Bulk(
+  projectId: number,
+  parentRunId?: number,
+): Promise<number[]> {
   const em = getOrm().em.fork();
   const pending = await em.find(Notice, {
     project: projectId,
@@ -156,11 +223,22 @@ export async function runStep2Bulk(projectId: number): Promise<number[]> {
 
   const runIds: number[] = [];
   for (const ref of pendingRefs) {
+    if (isProjectStopped(projectId)) break;
+    if (parentRunId !== undefined && isCancelled(parentRunId)) {
+      break;
+    }
     try {
       const run = await runStep2ForNotice(projectId, ref);
       runIds.push(run.id);
+      if (isCancelled(run.id) || isProjectStopped(projectId)) {
+        break;
+      }
     } catch (err) {
       console.error(`[runStep2Bulk] failed for notice ${ref.noticeId}`, err);
+      if (isProjectStopped(projectId)) break;
+      if (parentRunId !== undefined && isCancelled(parentRunId)) {
+        break;
+      }
     }
   }
   return runIds;
