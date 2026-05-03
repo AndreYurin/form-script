@@ -1,4 +1,4 @@
-import type { EntityManager } from "@mikro-orm/better-sqlite";
+import type { EntityManager } from "@mikro-orm/libsql";
 
 declare global {
   namespace Express {

@@ -1,7 +1,7 @@
 import "dotenv/config";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "@mikro-orm/better-sqlite";
+import { defineConfig } from "@mikro-orm/libsql";
 import { Migrator } from "@mikro-orm/migrations";
 import { TsMorphMetadataProvider } from "@mikro-orm/reflection";
 import { Project } from "./db/entities/project.js";

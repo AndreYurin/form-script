@@ -1,8 +1,8 @@
 import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
-import { MikroORM } from "@mikro-orm/better-sqlite";
-import type { EntityManager } from "@mikro-orm/better-sqlite";
+import { MikroORM } from "@mikro-orm/libsql";
+import type { EntityManager } from "@mikro-orm/libsql";
 import config from "../mikro-orm.config.js";
 
 let ormInstance: MikroORM | null = null;
