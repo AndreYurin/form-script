@@ -41,17 +41,9 @@ export class ScriptRun {
   @Property({ type: "text", fieldName: "screenshot_path", nullable: true })
   screenshotPath?: string | null;
 
-  @Property({
-    type: "timestamptz",
-    fieldName: "started_at",
-    defaultRaw: "now()",
-  })
+  @Property({ type: "datetime", fieldName: "started_at" })
   startedAt: Date = new Date();
 
-  @Property({
-    type: "timestamptz",
-    fieldName: "finished_at",
-    nullable: true,
-  })
+  @Property({ type: "datetime", fieldName: "finished_at", nullable: true })
   finishedAt?: Date | null;
 }

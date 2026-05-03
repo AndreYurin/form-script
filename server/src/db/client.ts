@@ -1,12 +1,16 @@
 import "dotenv/config";
-import { MikroORM } from "@mikro-orm/postgresql";
-import type { EntityManager } from "@mikro-orm/postgresql";
+import fs from "node:fs";
+import path from "node:path";
+import { MikroORM } from "@mikro-orm/better-sqlite";
+import type { EntityManager } from "@mikro-orm/better-sqlite";
 import config from "../mikro-orm.config.js";
 
 let ormInstance: MikroORM | null = null;
 
 export async function initOrm(): Promise<MikroORM> {
   if (ormInstance) return ormInstance;
+  const dbDir = path.dirname(config.dbName as string);
+  fs.mkdirSync(dbDir, { recursive: true });
   ormInstance = await MikroORM.init(config);
   return ormInstance;
 }

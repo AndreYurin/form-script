@@ -37,27 +37,25 @@ Every completed task must be fully functional and ready to use or ready for revi
 
 Local fullstack admin tool that scrapes the Kazakhstan government procurement
 portal (goszakup.gov.kz) for announcements related to educational institutions
-(schools, kindergartens, gymnasiums, lyceums), stores them in Postgres, and
-exposes a React dashboard for review, scheduling, and per-notice actions.
+(schools, kindergartens, gymnasiums, lyceums), stores them in a local SQLite
+database, and exposes a React dashboard for review, scheduling, and per-notice
+actions.
 
 ## Quick Start
 
 ```bash
-# 1. Start Postgres
-docker compose up -d
-
-# 2. Install deps (monorepo: root + server + client)
+# 1. Install deps (monorepo: root + server + client)
 npm install
 cp .env.example .env
 
-# 3. Apply migrations and seed project
+# 2. Apply migrations and seed project (creates data/app.db on first run)
 npm run --workspace server migrate        # MikroORM migration:up
 npm run --workspace server db:seed
 
-# 4. (optional) Import existing data/*.json into Postgres
+# 3. (optional) Import existing data/*.json into SQLite
 npm run --workspace server db:migrate-json
 
-# 5. Run dev servers (Vite on :3000, Express on :3001)
+# 4. Run dev servers (Vite on :3000, Express on :3001)
 npm run dev
 ```
 
@@ -77,15 +75,14 @@ node index.js --reset
 ```
 form-script/
 ├── package.json              — root workspaces: server, client + legacy scraper scripts
-├── docker-compose.yml        — Postgres 16 service
-├── .env.example              — DATABASE_URL, PORT, NODE_ENV
+├── .env.example              — DATABASE_URL (SQLite path, optional), PORT, NODE_ENV
 │
 ├── step1-collect-ids.js      — legacy scraper (still used; spawned by server as child process)
 ├── step2-collect-details.js  — legacy scraper
 ├── index.js / config.js / lib/ — legacy scraper entrypoint + helpers
-├── data/                     — JSON outputs + Playwright browser profile
+├── data/                     — SQLite DB (app.db), JSON outputs, screenshots, Playwright browser profile
 │
-├── server/                   — Express + MikroORM + node-cron (TypeScript)
+├── server/                   — Express + MikroORM (better-sqlite) + node-cron (TypeScript)
 │   ├── src/
 │   │   ├── index.ts          — Express bootstrap + RequestContext middleware + cron init + static SPA in prod
 │   │   ├── mikro-orm.config.ts — shared runtime + CLI config
@@ -166,21 +163,20 @@ See [SITE_DOCS.md](./SITE_DOCS.md) for goszakup.gov.kz structure notes.
 ## For AI Agent / Developer
 
 - **Single source of truth for tuneable scraper params**: `config.js` (legacy) — still drives the child-process scrapers.
-- **Server is TypeScript with ESM + MikroORM (PostgreSQL driver)**. Decorator entities live under `server/src/db/entities/`. Each HTTP request is wrapped in `RequestContext.create(orm.em, ...)` so route handlers read `req.em` — a forked EntityManager with its own identity map. Runner modules and cron ticks call `getOrm().em.fork()` explicitly. Run via `tsx watch` in dev, `tsc` build for prod.
+- **Server is TypeScript with ESM + MikroORM (better-sqlite driver)**. Decorator entities live under `server/src/db/entities/`. Each HTTP request is wrapped in `RequestContext.create(orm.em, ...)` so route handlers read `req.em` — a forked EntityManager with its own identity map. Runner modules and cron ticks call `getOrm().em.fork()` explicitly. Run via `tsx watch` in dev, `tsc` build for prod. The DB lives at `data/app.db` (override with `DATABASE_URL`).
 - **Client proxies `/api/*` to `localhost:3001`** in dev; in production (`NODE_ENV=production`) the server serves `client/dist`.
 - **Cron jobs live in the Express process**. Restart the server to re-register them; edits via UI are applied live.
 - **Headed auth**: `POST /api/projects/:id/authorize` opens a real browser on the same machine as the server. Close the window to finish.
-- **If site HTML structure changes**, update selectors in `step1-collect-ids.js` / `step2-collect-details.js` and verify via `docker compose up`, `npm run dev`, manual Step 1 run.
-- **The JSON-file → Postgres sync** is a deliberate bridge: scripts still write `data/*.json`, server reads them post-run and upserts. Long-term plan is to refactor scripts to write directly.
+- **If site HTML structure changes**, update selectors in `step1-collect-ids.js` / `step2-collect-details.js` and verify via `npm run dev` + a manual Step 1 run.
+- **The JSON-file → DB sync** is a deliberate bridge: scripts still write `data/*.json`, server reads them post-run and upserts. Long-term plan is to refactor scripts to write directly.
 - **step1-collect-ids.js** now requires `--keyword <text>` arg; also supports `--screenshot-path <path>` (screenshot-only mode). The runner loops over `project.searchKeywords`, running screenshot phase then collection phase per keyword, all writing to a single `script_runs` row.
 - **Screenshots** are saved to `data/screenshots/<runId>-<slug>.png` and served via Express static at `/data/screenshots/`. The `screenshot_path` column on `script_runs` stores the relative path.
-- **Pre-commit sanity**: keep `SITE_DOCS.md` current, never commit `.env`, never commit `data/browser-profile/`, never commit `data/screenshots/*.png`.
+- **Pre-commit sanity**: keep `SITE_DOCS.md` current, never commit `.env`, never commit `data/browser-profile/`, never commit `data/screenshots/*.png`, never commit `data/app.db`.
 
 ---
 
 To run the first time:
 
-- docker compose up -d
 - npm install
 - cp .env.example .env
 - npm run --workspace server migrate

@@ -28,14 +28,10 @@ export class Project {
   @Property({ type: "boolean", fieldName: "cron_enabled", default: false })
   cronEnabled: boolean = false;
 
-  @Property({ type: "json", fieldName: "search_keywords", default: [] })
+  @Property({ type: "json", fieldName: "search_keywords" })
   searchKeywords: string[] = [];
 
-  @Property({
-    type: "timestamptz",
-    fieldName: "created_at",
-    defaultRaw: "now()",
-  })
+  @Property({ type: "datetime", fieldName: "created_at" })
   createdAt: Date = new Date();
 
   @OneToMany(() => Notice, (notice) => notice.project)

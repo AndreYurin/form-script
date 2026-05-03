@@ -41,13 +41,12 @@ export class Notice {
   @Property({ type: "json", nullable: true })
   details?: unknown;
 
-  @Property({ type: "timestamptz", fieldName: "collected_at", nullable: true })
+  @Property({ type: "datetime", fieldName: "collected_at", nullable: true })
   collectedAt?: Date | null;
 
   @Property({
-    type: "timestamptz",
+    type: "datetime",
     fieldName: "updated_at",
-    defaultRaw: "now()",
     onUpdate: () => new Date(),
   })
   updatedAt: Date = new Date();
