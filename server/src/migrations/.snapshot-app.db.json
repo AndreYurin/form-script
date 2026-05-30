@@ -314,22 +314,6 @@
           "enumItems": [],
           "mappedType": "integer"
         },
-        "search_keywords": {
-          "name": "search_keywords",
-          "type": "TEXT",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": "'[]'",
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "text"
-        },
         "created_at": {
           "name": "created_at",
           "type": "datetime",
@@ -345,6 +329,22 @@
           "comment": null,
           "enumItems": [],
           "mappedType": "datetime"
+        },
+        "search_configs": {
+          "name": "search_configs",
+          "type": "TEXT",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "'[]'",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
         }
       },
       "name": "projects",

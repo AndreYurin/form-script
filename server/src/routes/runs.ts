@@ -65,6 +65,17 @@ runsRouter.post("/:id/run/step1", async (req, res, next) => {
   }
 });
 
+runsRouter.post("/:id/search-configs/:configId/run/step1", async (req, res, next) => {
+  try {
+    const projectId = Number(req.params.id);
+    const configId = String(req.params.configId);
+    const run = await runStep1(projectId, configId);
+    res.json({ runId: run.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
 runsRouter.post("/:id/script-runs/:runId/stop", async (req, res, next) => {
   try {
     const projectId = Number(req.params.id);

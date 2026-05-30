@@ -19,7 +19,7 @@ async function main() {
     targetUrl: "https://goszakup.gov.kz/",
     cronExpression: "0 6 * * *",
     cronEnabled: false,
-    searchKeywords: [],
+    searchConfigs: [],
     createdAt: new Date(),
   });
   await em.persistAndFlush(project);

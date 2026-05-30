@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getOrm } from "../db/client.js";
 import { Notice } from "../db/entities/notice.js";
-import { Project } from "../db/entities/project.js";
+import { Project, type SearchConfig } from "../db/entities/project.js";
 import { ScriptRun } from "../db/entities/script-run.js";
 import { NoticeStatus, ScriptRunStatus } from "../db/enums.js";
 import {
@@ -42,27 +42,46 @@ async function appendRunLog(runId: number, text: string): Promise<void> {
   await em.flush();
 }
 
-export async function runStep1(projectId: number): Promise<ScriptRun> {
+export async function runStep1(
+  projectId: number,
+  configId?: string,
+): Promise<ScriptRun> {
   // A fresh run clears any previous project-wide stop signal.
   clearProjectStop(projectId);
 
   const em = getOrm().em.fork();
   const project = await em.findOneOrFail(Project, { id: projectId });
 
-  if (!project.searchKeywords || project.searchKeywords.length === 0) {
+  const allConfigs = project.searchConfigs ?? [];
+  const configs: SearchConfig[] = configId
+    ? allConfigs.filter((c) => c.id === configId)
+    : allConfigs;
+
+  if (configs.length === 0) {
+    if (configId) {
+      throw new Error(`Search configuration "${configId}" not found.`);
+    }
     throw new Error(
-      "No search keywords configured for this project. Add at least one keyword before running Step 1.",
+      "No search configurations for this project. Add at least one configuration before running Step 1.",
     );
   }
 
-  const keywords = project.searchKeywords;
+  // A config must have at least one keyword to run.
+  const runnable = configs.filter(
+    (c) => Array.isArray(c.searchKeywords) && c.searchKeywords.some((k) => k.trim().length > 0),
+  );
+  if (runnable.length === 0) {
+    throw new Error(
+      "Selected configuration(s) have no search keywords. Add at least one keyword before running Step 1.",
+    );
+  }
 
-  // Create a single ScriptRun row that will cover all keywords
+  // Create a single ScriptRun row that will cover all configs/keywords
   const runEm = getOrm().em.fork();
   const run = runEm.create(ScriptRun, {
     project: runEm.getReference(Project, projectId),
     notice: null,
-    scriptName: "step1",
+    scriptName: configId ? `step1:${configId}` : "step1",
     status: ScriptRunStatus.Running,
     log: "",
     startedAt: new Date(),
@@ -77,73 +96,94 @@ export async function runStep1(projectId: number): Promise<ScriptRun> {
   let overallSuccess = true;
   let cancelled = false;
 
-  for (const keyword of keywords) {
-    if (isCancelled(runId) || isProjectStopped(projectId)) {
-      cancelled = true;
-      await appendRunLog(runId, `\n[cancelled] Skipping remaining keywords.\n`);
-      break;
-    }
+  outer: for (const cfg of runnable) {
+    const filterEnv = JSON.stringify(cfg.organizerFilters ?? []);
+    const amountFromEnv =
+      cfg.amountFrom !== null && cfg.amountFrom !== undefined ? String(cfg.amountFrom) : "";
+    const childEnv: Record<string, string> = {
+      STEP1_ORGANIZER_FILTERS: filterEnv,
+    };
+    if (amountFromEnv) childEnv.STEP1_AMOUNT_FROM = amountFromEnv;
 
-    await appendRunLog(runId, `\n[keyword: ${keyword}] Starting...\n`);
+    await appendRunLog(
+      runId,
+      `\n[config: ${cfg.name || cfg.id}] organizer filters: ${
+        (cfg.organizerFilters ?? []).length === 0 ? "—" : (cfg.organizerFilters ?? []).join(", ")
+      }; amount from: ${amountFromEnv || "—"}\n`,
+    );
 
-    // Phase A: screenshot
-    const slug = slugify(keyword);
-    const screenshotFile = `${runId}-${slug}.png`;
-    const screenshotPath = path.join(SCREENSHOTS_DIR, screenshotFile);
+    for (const keyword of cfg.searchKeywords) {
+      if (!keyword || !keyword.trim()) continue;
 
-    await appendRunLog(runId, `[keyword: ${keyword}] Taking screenshot...\n`);
-    try {
-      await runScript({
-        projectId,
-        scriptName: "step1-screenshot",
-        scriptFile: STEP1_FILE,
-        args: ["--keyword", keyword, "--screenshot-path", screenshotPath],
-        existingRunId: runId,
-        logPrefix: `[keyword: ${keyword}][screenshot] `,
-      });
-
-      // Save screenshot path on the run row (last keyword wins — or first success)
-      const snapEm = getOrm().em.fork();
-      const snapRun = await snapEm.findOneOrFail(ScriptRun, { id: runId });
-      if (!snapRun.screenshotPath) {
-        snapRun.screenshotPath = `screenshots/${screenshotFile}`;
-        await snapEm.flush();
-      }
-
-      await appendRunLog(runId, `[keyword: ${keyword}] Screenshot saved: ${screenshotFile}\n`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      await appendRunLog(runId, `[keyword: ${keyword}] Screenshot failed: ${msg}\n`);
-      // Continue with collection even if screenshot fails
-    }
-
-    if (isCancelled(runId) || isProjectStopped(projectId)) {
-      cancelled = true;
-      await appendRunLog(runId, `\n[cancelled] Skipping remaining keywords.\n`);
-      break;
-    }
-
-    // Phase B: real collection
-    await appendRunLog(runId, `[keyword: ${keyword}] Collecting IDs...\n`);
-    try {
-      await runScript({
-        projectId,
-        scriptName: "step1-collect",
-        scriptFile: STEP1_FILE,
-        args: ["--keyword", keyword],
-        existingRunId: runId,
-        logPrefix: `[keyword: ${keyword}] `,
-      });
-      await syncStep1Output(projectId, keyword);
-      await appendRunLog(runId, `[keyword: ${keyword}] Done.\n`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      await appendRunLog(runId, `[keyword: ${keyword}] Collection failed: ${msg}\n`);
-      if (isCancelled(runId)) {
+      if (isCancelled(runId) || isProjectStopped(projectId)) {
         cancelled = true;
-        break;
+        await appendRunLog(runId, `\n[cancelled] Skipping remaining keywords.\n`);
+        break outer;
       }
-      overallSuccess = false;
+
+      await appendRunLog(runId, `\n[config: ${cfg.name || cfg.id}][keyword: ${keyword}] Starting...\n`);
+
+      // Phase A: screenshot
+      const slug = slugify(`${cfg.id}-${keyword}`);
+      const screenshotFile = `${runId}-${slug}.png`;
+      const screenshotPath = path.join(SCREENSHOTS_DIR, screenshotFile);
+
+      await appendRunLog(runId, `[keyword: ${keyword}] Taking screenshot...\n`);
+      try {
+        await runScript({
+          projectId,
+          scriptName: "step1-screenshot",
+          scriptFile: STEP1_FILE,
+          args: ["--keyword", keyword, "--screenshot-path", screenshotPath],
+          env: childEnv,
+          existingRunId: runId,
+          logPrefix: `[keyword: ${keyword}][screenshot] `,
+        });
+
+        // Save screenshot path on the run row (first success wins)
+        const snapEm = getOrm().em.fork();
+        const snapRun = await snapEm.findOneOrFail(ScriptRun, { id: runId });
+        if (!snapRun.screenshotPath) {
+          snapRun.screenshotPath = `screenshots/${screenshotFile}`;
+          await snapEm.flush();
+        }
+
+        await appendRunLog(runId, `[keyword: ${keyword}] Screenshot saved: ${screenshotFile}\n`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await appendRunLog(runId, `[keyword: ${keyword}] Screenshot failed: ${msg}\n`);
+        // Continue with collection even if screenshot fails
+      }
+
+      if (isCancelled(runId) || isProjectStopped(projectId)) {
+        cancelled = true;
+        await appendRunLog(runId, `\n[cancelled] Skipping remaining keywords.\n`);
+        break outer;
+      }
+
+      // Phase B: real collection
+      await appendRunLog(runId, `[keyword: ${keyword}] Collecting IDs...\n`);
+      try {
+        await runScript({
+          projectId,
+          scriptName: "step1-collect",
+          scriptFile: STEP1_FILE,
+          args: ["--keyword", keyword],
+          env: childEnv,
+          existingRunId: runId,
+          logPrefix: `[keyword: ${keyword}] `,
+        });
+        await syncStep1Output(projectId, keyword);
+        await appendRunLog(runId, `[keyword: ${keyword}] Done.\n`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await appendRunLog(runId, `[keyword: ${keyword}] Collection failed: ${msg}\n`);
+        if (isCancelled(runId)) {
+          cancelled = true;
+          break outer;
+        }
+        overallSuccess = false;
+      }
     }
   }
 

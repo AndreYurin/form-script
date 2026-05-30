@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { Project } from "../db/entities/project.js";
+import { Project, type SearchConfig } from "../db/entities/project.js";
 import { ScriptRun } from "../db/entities/script-run.js";
 import { ScriptRunStatus } from "../db/enums.js";
 import { rescheduleProject } from "../cron/scheduler.js";
@@ -15,9 +15,49 @@ function serializeProject(project: Project) {
     targetUrl: project.targetUrl,
     cronExpression: project.cronExpression,
     cronEnabled: project.cronEnabled,
-    searchKeywords: project.searchKeywords,
+    searchConfigs: project.searchConfigs ?? [],
     createdAt: project.createdAt,
   };
+}
+
+function normalizeSearchConfigs(input: unknown): SearchConfig[] | null {
+  if (!Array.isArray(input)) return null;
+
+  const seenIds = new Set<string>();
+  const result: SearchConfig[] = [];
+  for (const raw of input) {
+    if (!raw || typeof raw !== "object") return null;
+    const obj = raw as Record<string, unknown>;
+
+    const id = typeof obj.id === "string" && obj.id.trim().length > 0 ? obj.id.trim() : null;
+    if (!id) return null;
+    if (seenIds.has(id)) return null;
+    seenIds.add(id);
+
+    const name = typeof obj.name === "string" ? obj.name : "";
+
+    const kws = Array.isArray(obj.searchKeywords) ? obj.searchKeywords : [];
+    if (!kws.every((k) => typeof k === "string")) return null;
+
+    const filters = Array.isArray(obj.organizerFilters) ? obj.organizerFilters : [];
+    if (!filters.every((k) => typeof k === "string")) return null;
+
+    let amountFrom: number | null = null;
+    if (obj.amountFrom !== undefined && obj.amountFrom !== null && obj.amountFrom !== "") {
+      const n = typeof obj.amountFrom === "number" ? obj.amountFrom : Number(obj.amountFrom);
+      if (!Number.isFinite(n) || n < 0) return null;
+      amountFrom = Math.floor(n);
+    }
+
+    result.push({
+      id,
+      name,
+      searchKeywords: (kws as string[]).map((s) => s.trim()).filter((s) => s.length > 0),
+      organizerFilters: (filters as string[]).map((s) => s.trim()).filter((s) => s.length > 0),
+      amountFrom,
+    });
+  }
+  return result;
 }
 
 projectsRouter.get("/", async (req, res, next) => {
@@ -60,22 +100,23 @@ projectsRouter.get("/:id", async (req, res, next) => {
   }
 });
 
-projectsRouter.patch("/:id/keywords", async (req, res, next) => {
+projectsRouter.patch("/:id/search-configs", async (req, res, next) => {
   try {
     const id = Number(req.params.id);
-    const { searchKeywords } = req.body as { searchKeywords?: unknown };
+    const { searchConfigs } = req.body as { searchConfigs?: unknown };
 
-    if (
-      !Array.isArray(searchKeywords) ||
-      !searchKeywords.every((k) => typeof k === "string")
-    ) {
-      return res.status(400).json({ error: "searchKeywords must be an array of strings" });
+    const normalized = normalizeSearchConfigs(searchConfigs);
+    if (normalized === null) {
+      return res.status(400).json({
+        error:
+          "searchConfigs must be an array of { id, name, searchKeywords[], organizerFilters[] } with unique non-empty ids",
+      });
     }
 
     const project = await req.em.findOne(Project, { id });
     if (!project) return res.status(404).json({ error: "project not found" });
 
-    project.searchKeywords = searchKeywords;
+    project.searchConfigs = normalized;
     await req.em.flush();
     res.json(serializeProject(project));
   } catch (err) {

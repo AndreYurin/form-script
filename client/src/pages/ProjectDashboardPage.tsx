@@ -5,7 +5,7 @@ import { mutations, queries } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { CronConfig } from "@/components/CronConfig";
 import { AuthSection } from "@/components/AuthSection";
-import { SearchKeywordsConfig } from "@/components/SearchKeywordsConfig";
+import { SearchConfigsConfig } from "@/components/SearchConfigsConfig";
 import { ScriptDocs } from "@/components/ScriptDocs";
 import { NoticeTable } from "@/components/NoticeTable";
 
@@ -79,10 +79,15 @@ export function ProjectDashboardPage() {
         <AuthSection projectId={project.id} />
       </div>
 
-      <SearchKeywordsConfig project={project} />
+      <SearchConfigsConfig project={project} />
 
       <ScriptDocs projectId={project.id} />
-      <NoticeTable projectId={project.id} hasKeywords={(project.searchKeywords?.length ?? 0) > 0} />
+      <NoticeTable
+        projectId={project.id}
+        hasKeywords={(project.searchConfigs ?? []).some(
+          (c) => c.searchKeywords.length > 0,
+        )}
+      />
     </div>
   );
 }

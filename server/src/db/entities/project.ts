@@ -8,6 +8,15 @@ import {
 import { Notice } from "./notice.js";
 import { ScriptRun } from "./script-run.js";
 
+export interface SearchConfig {
+  id: string;
+  name: string;
+  searchKeywords: string[];
+  organizerFilters: string[];
+  /** Minimum amount filter ("Сумма закупки с"). null means no filter. */
+  amountFrom?: number | null;
+}
+
 @Entity({ tableName: "projects" })
 export class Project {
   @PrimaryKey()
@@ -28,8 +37,8 @@ export class Project {
   @Property({ type: "boolean", fieldName: "cron_enabled", default: false })
   cronEnabled: boolean = false;
 
-  @Property({ type: "json", fieldName: "search_keywords" })
-  searchKeywords: string[] = [];
+  @Property({ type: "json", fieldName: "search_configs" })
+  searchConfigs: SearchConfig[] = [];
 
   @Property({ type: "datetime", fieldName: "created_at" })
   createdAt: Date = new Date();

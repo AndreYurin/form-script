@@ -9,6 +9,18 @@
  *                             saves it to the given path, then exits WITHOUT collecting IDs.
  *   --headed                  Launch Chromium with a visible window (default: headless).
  *
+ * Required env:
+ *   STEP1_ORGANIZER_FILTERS   JSON array of substrings. A row's «Организатор» field must
+ *                             contain at least one of these (case-insensitive) to be kept.
+ *                             If the array is empty, every row is kept.
+ *
+ * Optional env:
+ *   STEP1_AMOUNT_FROM         Numeric. If set (and > 0), fills the «Сумма закупки с»
+ *                             field (input[name="filter[amount_from]"]) before submit.
+ *
+ * Search form selector for amount field:
+ *   - "Сумма закупки с" input: input[name="filter[amount_from]"] (id="in_amount_from")
+ *
  * Site structure (search results page):
  *   - Table with id="search-result" and DataTables wrapper
  *   - Each row: <tr> inside <tbody>
@@ -19,7 +31,8 @@
  *
  * Search form selectors:
  *   - "Наименование объявления" input: input[name="filter[name]"]
- *   - "Статус" checkboxes (210, 220, 240): input[name="filter[status][]"][value="210|220|240"]
+ *   - "Статус" select (210, 220, 240): select[name="filter[status][]"]
+ *   - "Предмет закупки" select, fixed to "s" (Услуга): select[name="filter[trade_type]"]
  *   - Submit button: button[type="submit"] or button.smb inside the filter form
  *   - Results table: #search-result tbody tr
  */
@@ -31,6 +44,47 @@ const log = require('./lib/logger');
 
 async function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Read organizer filter substrings from STEP1_ORGANIZER_FILTERS env var.
+ * Returns a lowercase string[]. Empty array means "no filter — keep every row".
+ */
+function parseOrganizerFilters() {
+  const raw = process.env.STEP1_ORGANIZER_FILTERS;
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((s) => typeof s === "string")
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.length > 0);
+  } catch (err) {
+    log.warn(`STEP1_ORGANIZER_FILTERS is not valid JSON, ignoring: ${err.message}`);
+    return [];
+  }
+}
+
+function organizerMatches(organizer, filters) {
+  if (filters.length === 0) return true;
+  const lower = (organizer || "").toLowerCase();
+  return filters.some((f) => lower.includes(f));
+}
+
+/**
+ * Read STEP1_AMOUNT_FROM env var. Returns null when unset/blank or unparseable,
+ * otherwise a non-negative integer string ready to type into the form.
+ */
+function parseAmountFrom() {
+  const raw = process.env.STEP1_AMOUNT_FROM;
+  if (!raw || !raw.trim()) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) {
+    log.warn(`STEP1_AMOUNT_FROM is not a non-negative number, ignoring: ${raw}`);
+    return null;
+  }
+  return String(Math.floor(n));
 }
 
 // Parse CLI arguments
@@ -73,9 +127,22 @@ async function performSearch(page, keyword) {
   await nameInput.waitFor({ timeout: config.PAGE_LOAD_TIMEOUT });
   await nameInput.fill(keyword);
 
+  // Optional: "Сумма закупки с" minimum-amount filter.
+  const amountFrom = parseAmountFrom();
+  if (amountFrom) {
+    log.info(`Filling minimum amount (Сумма закупки с): ${amountFrom}`);
+    const amountInput = page.locator('input[name="filter[amount_from]"]');
+    await amountInput.waitFor({ timeout: config.PAGE_LOAD_TIMEOUT });
+    await amountInput.fill(amountFrom);
+  }
+
   // Select statuses in the multi-select: 210 Опубликовано, 220 прием заявок, 240 прием ценовых предложений
   await page.selectOption('select[name="filter[status][]"]', ['210', '220', '240']);
   log.info('Selected statuses: 210, 220, 240');
+
+  // «Предмет закупки» = Услуга (value "s"). Hardcoded, like status above.
+  await page.selectOption('select[name="filter[trade_type]"]', 's');
+  log.info('Selected trade_type: s (Услуга)');
 
   log.info('Clicking search button...');
   const submitBtn = page.locator('button[type="submit"]:has-text("Найти")');
@@ -113,7 +180,7 @@ async function parseSearchPage(page) {
   }
 
   const matches = [];
-  const ORGANIZER_FILTER = /школа|образовательн|ясл|гимназ|лице/i;
+  const organizerFilters = parseOrganizerFilters();
 
   for (const row of rows) {
     // Extract announcement number from first <td> > <strong>
@@ -143,7 +210,7 @@ async function parseSearchPage(page) {
       .split('\n')[0]
       .trim();
 
-    if (!ORGANIZER_FILTER.test(organizer)) {
+    if (!organizerMatches(organizer, organizerFilters)) {
       log.info(`Skipped (organizer no match): ${fullNumber} — ${organizer.substring(0, 80)}`);
       continue;
     }
@@ -193,7 +260,13 @@ async function main() {
     process.exit(1);
   }
 
-  log.info(`=== Step 1: Collecting announcement IDs (keyword: "${keyword}") ===`);
+  const organizerFilters = parseOrganizerFilters();
+  const amountFromBanner = parseAmountFrom();
+  log.info(
+    `=== Step 1: Collecting announcement IDs (keyword: "${keyword}", ` +
+      `organizer filters: ${organizerFilters.length === 0 ? "—" : organizerFilters.join(", ")}, ` +
+      `amount from: ${amountFromBanner ?? "—"}) ===`,
+  );
 
   const context = await launchBrowser({ headless: !headed });
   const page = await context.newPage();

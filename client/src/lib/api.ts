@@ -5,6 +5,14 @@ export const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+export interface SearchConfig {
+  id: string;
+  name: string;
+  searchKeywords: string[];
+  organizerFilters: string[];
+  amountFrom?: number | null;
+}
+
 export interface Project {
   id: number;
   name: string;
@@ -12,7 +20,7 @@ export interface Project {
   targetUrl: string;
   cronExpression: string;
   cronEnabled: boolean;
-  searchKeywords: string[];
+  searchConfigs: SearchConfig[];
   createdAt: string;
 }
 
@@ -83,8 +91,10 @@ export const queries = {
 export const mutations = {
   updateCron: (id: number, body: { cronExpression?: string; cronEnabled?: boolean }) =>
     api.patch<Project>(`/projects/${id}/cron`, body).then((r) => r.data),
-  updateKeywords: (id: number, searchKeywords: string[]) =>
-    api.patch<Project>(`/projects/${id}/keywords`, { searchKeywords }).then((r) => r.data),
+  updateSearchConfigs: (id: number, searchConfigs: SearchConfig[]) =>
+    api
+      .patch<Project>(`/projects/${id}/search-configs`, { searchConfigs })
+      .then((r) => r.data),
   rejectNotice: (projectId: number, noticeRowId: number) =>
     api.patch<Notice>(`/projects/${projectId}/notices/${noticeRowId}/reject`).then((r) => r.data),
   collectNotice: (projectId: number, noticeRowId: number) =>
@@ -93,6 +103,12 @@ export const mutations = {
     api.post<{ runIds: number[] }>(`/projects/${projectId}/run/step2/bulk`).then((r) => r.data),
   runStep1: (projectId: number) =>
     api.post<{ runId: number }>(`/projects/${projectId}/run/step1`).then((r) => r.data),
+  runStep1ForConfig: (projectId: number, configId: string) =>
+    api
+      .post<{ runId: number }>(
+        `/projects/${projectId}/search-configs/${encodeURIComponent(configId)}/run/step1`,
+      )
+      .then((r) => r.data),
   startAuth: (projectId: number) =>
     api.post<{ status: string; pid: number }>(`/projects/${projectId}/authorize`).then((r) => r.data),
   stopAuth: (projectId: number) =>

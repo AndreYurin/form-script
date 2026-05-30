@@ -10,14 +10,14 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3002,
+    port: 3006,
     proxy: {
       "/api": {
-        target: "http://localhost:3001",
+        target: "http://localhost:3005",
         changeOrigin: true,
       },
       "/data": {
-        target: "http://localhost:3001",
+        target: "http://localhost:3005",
         changeOrigin: true,
       },
     },
