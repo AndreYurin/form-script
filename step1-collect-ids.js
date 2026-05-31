@@ -34,6 +34,8 @@
  *   - "Статус" select (210, 220, 240): select[name="filter[status][]"]
  *   - "Предмет закупки" select, fixed to "s" (Услуга): select[name="filter[trade_type]"]
  *   - Submit button: button[type="submit"] or button.smb inside the filter form
+ *   - "Показывать по" page-size select (no name/id): select[onchange*="ajax_set_count_record"]
+ *     Triggers an AJAX POST that sets the per-session row count, then location.reload(true).
  *   - Results table: #search-result tbody tr
  */
 
@@ -155,6 +157,54 @@ async function performSearch(page, keyword) {
 
   await sleep(config.NAV_DELAY);
   log.info('Search results loaded.');
+
+  await setMaxPageSize(page);
+}
+
+/**
+ * Switch the "Показывать по" length selector to its largest value so we paginate
+ * through fewer pages. The select has no name/id but a unique onchange handler.
+ * Changing it fires ajax_set_count_record() → POST → location.reload(true), so
+ * we await the navigation and re-wait for the results table.
+ */
+async function setMaxPageSize(page) {
+  const lengthSel = page.locator('select[onchange*="ajax_set_count_record"]');
+  if ((await lengthSel.count()) === 0) {
+    log.warn('Page-size selector not found, keeping site default.');
+    return;
+  }
+
+  const options = await lengthSel.locator('option').evaluateAll((els) =>
+    els.map((el) => parseInt(el.getAttribute('value') || '', 10)).filter((n) => Number.isFinite(n)),
+  );
+  if (options.length === 0) {
+    log.warn('Page-size selector has no options, keeping site default.');
+    return;
+  }
+
+  const target = String(Math.max(...options));
+  const current = await lengthSel.inputValue().catch(() => '');
+  if (current === target) {
+    log.info(`Page size already at max (${target}).`);
+    return;
+  }
+
+  log.info(`Setting page size: ${current || '?'} → ${target}`);
+  try {
+    await Promise.all([
+      page.waitForNavigation({
+        waitUntil: 'domcontentloaded',
+        timeout: config.PAGE_LOAD_TIMEOUT,
+      }),
+      lengthSel.selectOption(target),
+    ]);
+    await page.waitForSelector('#search-result tbody tr', {
+      timeout: config.PAGE_LOAD_TIMEOUT,
+    });
+    await sleep(config.NAV_DELAY);
+  } catch (err) {
+    log.warn(`Failed to apply page size ${target}: ${err.message}. Continuing with default.`);
+  }
 }
 
 /**
