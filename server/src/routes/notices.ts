@@ -32,7 +32,7 @@ noticesRouter.get("/:id/notices", async (req, res, next) => {
     if (status) where.status = status as NoticeStatus;
 
     const [rows, total] = await req.em.findAndCount(Notice, where, {
-      orderBy: { updatedAt: "desc" },
+      orderBy: { id: "desc" },
       limit: pageSize,
       offset,
     });
