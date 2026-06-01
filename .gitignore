@@ -1,6 +1,4 @@
 node_modules/
-.env
-.env.local
 data/browser-profile/
 data/screenshots/*.png
 dist/
